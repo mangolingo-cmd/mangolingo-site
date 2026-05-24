@@ -12,6 +12,7 @@ from typing import List, Optional
 
 import bcrypt
 import jwt
+import httpx
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -198,8 +199,8 @@ async def get_title(tid: str):
 
 @api.post("/titles")
 async def create_title(data: TitleIn, _: dict = Depends(require_admin)):
-    if data.type not in ("anime", "manhwa", "manga"):
-        raise HTTPException(400, "نوع غير صالح")
+    if data.type not in ("manhwa", "manga"):
+        raise HTTPException(400, "نوع غير صالح — manga أو manhwa فقط")
     tid = str(uuid.uuid4())
     doc = data.model_dump()
     doc.update({
@@ -493,8 +494,37 @@ class EpisodeIn(BaseModel):
 
 @api.get("/titles/{tid}/episodes")
 async def list_episodes(tid: str):
+    title = await db.titles.find_one({"id": tid}, {"_id": 0})
+    if not title:
+        raise HTTPException(404, "العنوان غير موجود")
     items = await db.episodes.find({"title_id": tid}, {"_id": 0}).sort("number", 1).to_list(2000)
+    # Lazy-load chapters from MangaDex if linked and not yet cached
+    if not items and title.get("mangadex_id"):
+        await _fetch_and_cache_mangadex_chapters(title)
+        items = await db.episodes.find({"title_id": tid}, {"_id": 0}).sort("number", 1).to_list(2000)
     return items
+
+@api.get("/episodes/{eid}/pages")
+async def get_episode_pages(eid: str, user: dict = Depends(get_current_user)):
+    """Return live page image URLs. For MangaDex chapters: fetched fresh from at-home server.
+    For manually-added chapters: returns stored pages."""
+    ep = await db.episodes.find_one({"id": eid}, {"_id": 0})
+    if not ep:
+        raise HTTPException(404, "الفصل غير موجود")
+    if ep.get("mangadex_chapter_id"):
+        try:
+            async with httpx.AsyncClient(timeout=15) as h:
+                r = await h.get(f"https://api.mangadex.org/at-home/server/{ep['mangadex_chapter_id']}")
+                r.raise_for_status()
+                d = r.json()
+                base = d["baseUrl"]
+                ch = d["chapter"]
+                pages = [f"{base}/data/{ch['hash']}/{f}" for f in ch.get("data", [])]
+                return {"pages": pages}
+        except Exception as e:
+            logger.exception("MangaDex pages fetch failed")
+            raise HTTPException(502, "تعذر جلب الصفحات من المصدر")
+    return {"pages": ep.get("pages", [])}
 
 @api.get("/titles/{tid}/episodes/{eid}")
 async def get_episode(tid: str, eid: str, user: dict = Depends(get_current_user)):
@@ -526,6 +556,152 @@ async def create_episode(tid: str, data: EpisodeIn, _: dict = Depends(require_ad
 async def delete_episode(tid: str, eid: str, _: dict = Depends(require_admin)):
     await db.episodes.delete_one({"id": eid, "title_id": tid})
     return {"ok": True}
+
+# -------- MangaDex integration --------
+MANGADEX_BASE = "https://api.mangadex.org"
+MANGADEX_UPLOADS = "https://uploads.mangadex.org"
+
+def _md_extract_title(attrs: dict) -> tuple[str, str]:
+    titles = attrs.get("title") or {}
+    alt_titles = attrs.get("altTitles") or []
+    title_en = titles.get("en") or next(iter(titles.values()), "")
+    title_ar = ""
+    for at in alt_titles:
+        if "ar" in at:
+            title_ar = at["ar"]
+            break
+    return title_en or "Unknown", title_ar
+
+def _md_extract_cover(rels: list) -> str:
+    for r in rels:
+        if r.get("type") == "cover_art":
+            fn = (r.get("attributes") or {}).get("fileName")
+            return fn or ""
+    return ""
+
+def _md_genres(tags: list) -> list:
+    out = []
+    for t in tags:
+        n = ((t.get("attributes") or {}).get("name") or {}).get("en")
+        if n:
+            out.append(n)
+    return out[:8]
+
+async def _import_mangadex_batch(ttype: str, original_languages: list, total: int) -> int:
+    """Bulk-import manga/manhwa metadata from MangaDex."""
+    inserted = 0
+    per_page = 100
+    async with httpx.AsyncClient(timeout=30) as h:
+        for offset in range(0, total, per_page):
+            params = [
+                ("limit", str(min(per_page, total - offset))),
+                ("offset", str(offset)),
+                ("availableTranslatedLanguage[]", "en"),
+                ("contentRating[]", "safe"),
+                ("contentRating[]", "suggestive"),
+                ("order[followedCount]", "desc"),
+                ("includes[]", "cover_art"),
+            ]
+            for lang in original_languages:
+                params.append(("originalLanguage[]", lang))
+            try:
+                r = await h.get(f"{MANGADEX_BASE}/manga", params=params)
+                r.raise_for_status()
+            except Exception:
+                logger.exception("MangaDex list failed at offset %s", offset)
+                break
+            data = r.json().get("data") or []
+            if not data:
+                break
+            for item in data:
+                md_id = item.get("id")
+                if not md_id:
+                    continue
+                existing = await db.titles.find_one({"mangadex_id": md_id})
+                if existing:
+                    continue
+                attrs = item.get("attributes") or {}
+                title_en, title_ar = _md_extract_title(attrs)
+                cover_fn = _md_extract_cover(item.get("relationships") or [])
+                cover_url = f"{MANGADEX_UPLOADS}/covers/{md_id}/{cover_fn}.512.jpg" if cover_fn else ""
+                desc = (attrs.get("description") or {}).get("en", "")
+                status_map = {"completed": "completed", "ongoing": "ongoing", "hiatus": "ongoing", "cancelled": "completed"}
+                doc = {
+                    "id": str(uuid.uuid4()),
+                    "mangadex_id": md_id,
+                    "type": ttype,
+                    "title": title_en,
+                    "title_ar": title_ar,
+                    "synopsis": desc[:1200],
+                    "cover_url": cover_url,
+                    "banner_url": cover_url,
+                    "genres": _md_genres(attrs.get("tags") or []),
+                    "status": status_map.get(attrs.get("status"), "ongoing"),
+                    "episodes": None,
+                    "chapters": attrs.get("lastChapter") and int(float(attrs["lastChapter"])) if (attrs.get("lastChapter") or "").replace(".", "").isdigit() else None,
+                    "year": attrs.get("year"),
+                    "rating_avg": 0,
+                    "rating_count": 0,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
+                try:
+                    await db.titles.insert_one(doc)
+                    inserted += 1
+                except Exception:
+                    pass
+    return inserted
+
+async def _fetch_and_cache_mangadex_chapters(title: dict):
+    """Fetch chapters list for a MangaDex title and store in episodes collection. Limit 200."""
+    md_id = title.get("mangadex_id")
+    if not md_id:
+        return
+    async with httpx.AsyncClient(timeout=30) as h:
+        try:
+            r = await h.get(
+                f"{MANGADEX_BASE}/manga/{md_id}/feed",
+                params=[
+                    ("limit", "300"),
+                    ("translatedLanguage[]", "en"),
+                    ("order[chapter]", "asc"),
+                    ("contentRating[]", "safe"),
+                    ("contentRating[]", "suggestive"),
+                ],
+            )
+            r.raise_for_status()
+        except Exception:
+            logger.exception("MangaDex chapters fetch failed for %s", md_id)
+            return
+        data = r.json().get("data") or []
+        seen_numbers = set()
+        for ch in data:
+            attrs = ch.get("attributes") or {}
+            ch_num_raw = attrs.get("chapter")
+            try:
+                ch_num = float(ch_num_raw) if ch_num_raw is not None else None
+            except ValueError:
+                ch_num = None
+            if ch_num is None or ch_num in seen_numbers:
+                continue
+            seen_numbers.add(ch_num)
+            await db.episodes.insert_one({
+                "id": str(uuid.uuid4()),
+                "title_id": title["id"],
+                "mangadex_chapter_id": ch.get("id"),
+                "number": ch_num,
+                "name": attrs.get("title") or "",
+                "video_url": "",
+                "pages": [],
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+
+@api.post("/admin/import_mangadex")
+async def import_mangadex(ttype: str = "manga", total: int = 500, _: dict = Depends(require_admin)):
+    if ttype not in ("manga", "manhwa"):
+        raise HTTPException(400, "نوع غير صالح: manga أو manhwa فقط")
+    langs = ["ja"] if ttype == "manga" else ["ko"]
+    count = await _import_mangadex_batch(ttype, langs, min(total, 1000))
+    return {"ok": True, "inserted": count}
 
 @api.get("/")
 async def root():

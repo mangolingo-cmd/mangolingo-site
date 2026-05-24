@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import api from "@/api";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, ChevronLeft, ArrowRight } from "lucide-react";
+import { ChevronRight, ChevronLeft, ArrowRight, Loader2 } from "lucide-react";
 
 export default function EpisodeView() {
   const { id, epId } = useParams();
@@ -10,17 +10,33 @@ export default function EpisodeView() {
   const [ep, setEp] = useState(null);
   const [title, setTitle] = useState(null);
   const [episodes, setEpisodes] = useState([]);
+  const [pages, setPages] = useState([]);
+  const [loadingPages, setLoadingPages] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const [a, b, c] = await Promise.all([
-        api.get(`/titles/${id}/episodes/${epId}`),
-        api.get(`/titles/${id}`),
-        api.get(`/titles/${id}/episodes`),
-      ]);
-      setEp(a.data);
-      setTitle(b.data);
-      setEpisodes(c.data);
+      try {
+        const [a, b, c] = await Promise.all([
+          api.get(`/titles/${id}/episodes/${epId}`),
+          api.get(`/titles/${id}`),
+          api.get(`/titles/${id}/episodes`),
+        ]);
+        setEp(a.data);
+        setTitle(b.data);
+        setEpisodes(c.data);
+        // Fetch live page URLs
+        if (b.data.type !== "anime") {
+          setLoadingPages(true);
+          try {
+            const p = await api.get(`/episodes/${epId}/pages`);
+            setPages(p.data.pages || []);
+          } finally {
+            setLoadingPages(false);
+          }
+        }
+      } catch {
+        // ignore
+      }
     })();
   }, [id, epId]);
 
@@ -59,10 +75,15 @@ export default function EpisodeView() {
         </div>
       ) : (
         <div className="space-y-2 max-w-3xl mx-auto" data-testid="chapter-reader">
-          {(ep.pages || []).length === 0 ? (
-            <p className="text-center text-muted-foreground py-12">لا توجد صفحات بعد</p>
-          ) : ep.pages.map((p, i) => (
-            <img key={i} src={p} alt={`Page ${i + 1}`} className="w-full rounded-lg border border-border" loading="lazy" />
+          {loadingPages ? (
+            <div className="flex flex-col items-center gap-3 py-20 text-muted-foreground">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              <span>جارٍ تحميل الصفحات…</span>
+            </div>
+          ) : pages.length === 0 ? (
+            <p className="text-center text-muted-foreground py-12">لا توجد صفحات متاحة</p>
+          ) : pages.map((p, i) => (
+            <img key={i} src={p} alt={`Page ${i + 1}`} className="w-full rounded-lg border border-border" loading="lazy" referrerPolicy="no-referrer" />
           ))}
         </div>
       )}
@@ -75,7 +96,7 @@ export default function EpisodeView() {
           data-testid="ep-prev"
         >
           <ChevronRight className="w-4 h-4 me-1" />
-          {isAnime ? "السابقة" : "السابق"}
+          السابق
         </Button>
         <Button
           variant="secondary"
@@ -83,7 +104,7 @@ export default function EpisodeView() {
           onClick={() => next && nav(`/title/${id}/episode/${next.id}`)}
           data-testid="ep-next"
         >
-          {isAnime ? "التالية" : "التالي"}
+          التالي
           <ChevronLeft className="w-4 h-4 ms-1" />
         </Button>
       </div>

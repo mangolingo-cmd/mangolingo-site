@@ -71,7 +71,6 @@ export default function Home() {
           <Tabs value={type} onValueChange={setType}>
             <TabsList data-testid="catalog-tabs" className="bg-[#0F111A]">
               <TabsTrigger value="all" data-testid="tab-all">الكل</TabsTrigger>
-              <TabsTrigger value="anime" data-testid="tab-anime">أنمي</TabsTrigger>
               <TabsTrigger value="manhwa" data-testid="tab-manhwa">مانهوا</TabsTrigger>
               <TabsTrigger value="manga" data-testid="tab-manga">مانجا</TabsTrigger>
             </TabsList>

@@ -143,6 +143,45 @@ export default function Admin() {
     <div className="space-y-6" data-testid="admin-page">
       <h1 className="font-display text-3xl font-black">لوحة الإدارة</h1>
 
+      <section className="bg-[#0F111A] border border-border rounded-xl p-6 space-y-3" data-testid="mangadex-import">
+        <h2 className="font-display text-xl font-black flex items-center gap-2">
+          <FilmIcon className="w-5 h-5 text-accent" /> استيراد من MangaDex
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          استورد مئات العناوين تلقائياً مع الفصول وصفحاتها الحقيقية. الفصول تُحمَّل عند فتح كل عنوان.
+        </p>
+        <div className="flex gap-2 flex-wrap">
+          <Button
+            onClick={async () => {
+              toast.info("جارٍ استيراد 500 مانجا...");
+              try {
+                const { data } = await api.post("/admin/import_mangadex?ttype=manga&total=500");
+                toast.success(`تم استيراد ${data.inserted} مانجا`);
+                load();
+              } catch (e) { toast.error(fmtError(e.response?.data?.detail)); }
+            }}
+            className="bg-primary hover:bg-primary/90"
+            data-testid="import-manga-btn"
+          >
+            استيراد 500 مانجا
+          </Button>
+          <Button
+            onClick={async () => {
+              toast.info("جارٍ استيراد 500 مانهوا...");
+              try {
+                const { data } = await api.post("/admin/import_mangadex?ttype=manhwa&total=500");
+                toast.success(`تم استيراد ${data.inserted} مانهوا`);
+                load();
+              } catch (e) { toast.error(fmtError(e.response?.data?.detail)); }
+            }}
+            variant="secondary"
+            data-testid="import-manhwa-btn"
+          >
+            استيراد 500 مانهوا
+          </Button>
+        </div>
+      </section>
+
       <section className="bg-[#0F111A] border border-border rounded-xl p-6 space-y-4">
         <h2 className="font-display text-xl font-black flex items-center gap-2">
           <Plus className="w-5 h-5 text-primary" /> إضافة عنوان جديد
@@ -153,7 +192,6 @@ export default function Admin() {
             <Select value={form.type} onValueChange={(v) => setForm({...form, type: v})}>
               <SelectTrigger data-testid="admin-type"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="anime">أنمي</SelectItem>
                 <SelectItem value="manhwa">مانهوا</SelectItem>
                 <SelectItem value="manga">مانجا</SelectItem>
               </SelectContent>

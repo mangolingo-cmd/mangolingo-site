@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
-const typeLabel = { anime: "أنمي", manhwa: "مانهوا", manga: "مانجا" };
+const typeLabel = { manhwa: "مانهوا", manga: "مانجا" };
 
 export default function TitleCard({ title }) {
   return (
