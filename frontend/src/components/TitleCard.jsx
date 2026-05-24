@@ -27,6 +27,11 @@ export default function TitleCard({ title }) {
         <Badge className="absolute top-2 end-2 bg-primary/90 text-white border-0 font-bold">
           {typeLabel[title.type] || title.type}
         </Badge>
+        {title.has_ar && (
+          <Badge className="absolute top-9 end-2 bg-accent/95 text-black border-0 font-bold text-[10px]" data-testid={`ar-badge-${title.id}`}>
+            عربي ✓
+          </Badge>
+        )}
         {title.rating_avg > 0 && (
           <div className="absolute top-2 start-2 bg-black/70 backdrop-blur-md rounded px-2 py-0.5 text-xs flex items-center gap-1">
             <Star className="w-3 h-3 fill-accent text-accent" />

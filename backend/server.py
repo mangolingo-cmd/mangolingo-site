@@ -178,7 +178,7 @@ async def update_me(data: ProfileUpdate, user: dict = Depends(get_current_user))
 
 # -------- Titles --------
 @api.get("/titles")
-async def list_titles(type: Optional[str] = None, q: Optional[str] = None, limit: int = 60):
+async def list_titles(type: Optional[str] = None, q: Optional[str] = None, ar_only: bool = False, limit: int = 60):
     # Exclude titles known to have no available chapters
     query = {"has_chapters": {"$ne": False}}
     if type:
@@ -188,7 +188,10 @@ async def list_titles(type: Optional[str] = None, q: Optional[str] = None, limit
             {"title": {"$regex": q, "$options": "i"}},
             {"title_ar": {"$regex": q, "$options": "i"}},
         ]
-    items = await db.titles.find(query, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    if ar_only:
+        query["has_ar"] = True
+    # Sort: titles with Arabic first, then by created_at
+    items = await db.titles.find(query, {"_id": 0}).sort([("has_ar", -1), ("created_at", -1)]).to_list(limit)
     return items
 
 @api.get("/titles/{tid}")
@@ -726,7 +729,10 @@ async def _fetch_and_cache_mangadex_chapters(title: dict, lang: str = "en"):
             if offset >= total:
                 break
     # Mark this language as fetched (so we don't retry empty fetches)
-    await db.titles.update_one({"id": title["id"]}, {"$addToSet": {"langs_fetched": lang}})
+    update = {"$addToSet": {"langs_fetched": lang}}
+    if lang == "ar" and inserted > 0:
+        update["$set"] = {"has_ar": True}
+    await db.titles.update_one({"id": title["id"]}, update)
     return inserted
 
 @api.post("/admin/import_mangadex")

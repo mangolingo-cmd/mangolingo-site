@@ -11,6 +11,7 @@ export default function Home() {
   const [titles, setTitles] = useState([]);
   const [q, setQ] = useState("");
   const [type, setType] = useState("all");
+  const [arOnly, setArOnly] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
@@ -19,6 +20,7 @@ export default function Home() {
       const params = {};
       if (type !== "all") params.type = type;
       if (q) params.q = q;
+      if (arOnly) params.ar_only = true;
       const { data } = await api.get("/titles", { params });
       setTitles(data);
     } finally {
@@ -30,7 +32,7 @@ export default function Home() {
     const id = setTimeout(load, 200);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, type]);
+  }, [q, type, arOnly]);
 
   return (
     <div className="space-y-8" data-testid="home-page">
@@ -75,6 +77,13 @@ export default function Home() {
               <TabsTrigger value="manga" data-testid="tab-manga">مانجا</TabsTrigger>
             </TabsList>
           </Tabs>
+          <button
+            onClick={() => setArOnly(!arOnly)}
+            className={`px-4 py-2 rounded-md text-sm font-bold transition border ${arOnly ? "bg-accent text-black border-accent" : "bg-[#0F111A] text-muted-foreground border-border hover:text-foreground"}`}
+            data-testid="ar-only-toggle"
+          >
+            عربي فقط {arOnly ? "✓" : ""}
+          </button>
         </div>
 
         {loading ? (
