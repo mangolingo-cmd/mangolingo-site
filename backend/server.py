@@ -605,14 +605,14 @@ def _md_genres(tags: list) -> list:
             out.append(n)
     return out[:8]
 
-async def _import_mangadex_batch(ttype: str, original_languages: list, total: int) -> int:
+async def _import_mangadex_batch(ttype: str, original_languages: list, total: int, start_offset: int = 0) -> int:
     """Bulk-import manga/manhwa metadata from MangaDex."""
     inserted = 0
     per_page = 100
     async with httpx.AsyncClient(timeout=30) as h:
-        for offset in range(0, total, per_page):
+        for offset in range(start_offset, start_offset + total, per_page):
             params = [
-                ("limit", str(min(per_page, total - offset))),
+                ("limit", str(min(per_page, start_offset + total - offset))),
                 ("offset", str(offset)),
                 ("availableTranslatedLanguage[]", "en"),
                 ("contentRating[]", "safe"),
@@ -670,60 +670,74 @@ async def _import_mangadex_batch(ttype: str, original_languages: list, total: in
     return inserted
 
 async def _fetch_and_cache_mangadex_chapters(title: dict, lang: str = "en"):
-    """Fetch chapters list for a MangaDex title in given language and store. Limit 200."""
+    """Fetch all chapters for a MangaDex title in given language (with pagination)."""
     md_id = title.get("mangadex_id")
     if not md_id:
         return
+    seen_numbers = set()
+    inserted = 0
     async with httpx.AsyncClient(timeout=30) as h:
-        try:
-            r = await h.get(
-                f"{MANGADEX_BASE}/manga/{md_id}/feed",
-                params=[
-                    ("limit", "300"),
-                    ("translatedLanguage[]", lang),
-                    ("order[chapter]", "asc"),
-                    ("contentRating[]", "safe"),
-                    ("contentRating[]", "suggestive"),
-                ],
-            )
-            r.raise_for_status()
-        except Exception:
-            logger.exception("MangaDex chapters fetch failed for %s lang=%s", md_id, lang)
-            await db.titles.update_one({"id": title["id"]}, {"$addToSet": {"langs_fetched": lang}})
-            return
-        data = r.json().get("data") or []
-        seen_numbers = set()
-        for ch in data:
-            attrs = ch.get("attributes") or {}
-            ch_num_raw = attrs.get("chapter")
+        offset = 0
+        while True:
             try:
-                ch_num = float(ch_num_raw) if ch_num_raw is not None else None
-            except ValueError:
-                ch_num = None
-            if ch_num is None or ch_num in seen_numbers:
-                continue
-            seen_numbers.add(ch_num)
-            await db.episodes.insert_one({
-                "id": str(uuid.uuid4()),
-                "title_id": title["id"],
-                "mangadex_chapter_id": ch.get("id"),
-                "number": ch_num,
-                "name": attrs.get("title") or "",
-                "language": lang,
-                "video_url": "",
-                "pages": [],
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            })
-        # Mark this language as fetched (so we don't retry empty fetches)
-        await db.titles.update_one({"id": title["id"]}, {"$addToSet": {"langs_fetched": lang}})
+                r = await h.get(
+                    f"{MANGADEX_BASE}/manga/{md_id}/feed",
+                    params=[
+                        ("limit", "500"),
+                        ("offset", str(offset)),
+                        ("translatedLanguage[]", lang),
+                        ("order[chapter]", "asc"),
+                        ("contentRating[]", "safe"),
+                        ("contentRating[]", "suggestive"),
+                    ],
+                )
+                r.raise_for_status()
+            except Exception:
+                logger.exception("MangaDex chapters fetch failed for %s lang=%s offset=%s", md_id, lang, offset)
+                break
+            body = r.json()
+            data = body.get("data") or []
+            if not data:
+                break
+            for ch in data:
+                attrs = ch.get("attributes") or {}
+                ch_num_raw = attrs.get("chapter")
+                try:
+                    ch_num = float(ch_num_raw) if ch_num_raw is not None else None
+                except ValueError:
+                    ch_num = None
+                if ch_num is None or ch_num in seen_numbers:
+                    continue
+                seen_numbers.add(ch_num)
+                await db.episodes.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "title_id": title["id"],
+                    "mangadex_chapter_id": ch.get("id"),
+                    "number": ch_num,
+                    "name": attrs.get("title") or "",
+                    "language": lang,
+                    "video_url": "",
+                    "pages": [],
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                })
+                inserted += 1
+            total = body.get("total", 0)
+            offset += len(data)
+            if offset >= total:
+                break
+    # Mark this language as fetched (so we don't retry empty fetches)
+    await db.titles.update_one({"id": title["id"]}, {"$addToSet": {"langs_fetched": lang}})
+    return inserted
 
 @api.post("/admin/import_mangadex")
 async def import_mangadex(ttype: str = "manga", total: int = 500, _: dict = Depends(require_admin)):
     if ttype not in ("manga", "manhwa"):
         raise HTTPException(400, "نوع غير صالح: manga أو manhwa فقط")
     langs = ["ja"] if ttype == "manga" else ["ko"]
-    count = await _import_mangadex_batch(ttype, langs, min(total, 1000))
-    return {"ok": True, "inserted": count}
+    # Skip past titles we've already imported for this type — fetch the next batch
+    existing = await db.titles.count_documents({"type": ttype, "mangadex_id": {"$exists": True}})
+    count = await _import_mangadex_batch(ttype, langs, min(total, 1000), start_offset=existing)
+    return {"ok": True, "inserted": count, "started_at_offset": existing}
 
 @api.post("/admin/cleanup_empty")
 async def cleanup_empty(_: dict = Depends(require_admin)):
@@ -746,7 +760,7 @@ async def cleanup_empty(_: dict = Depends(require_admin)):
                 await db.titles.update_one({"id": t["id"]}, {"$set": {"has_chapters": True}})
                 fetched.append(t["id"])
                 return
-            await _fetch_and_cache_mangadex_chapters(t)
+            await _fetch_and_cache_mangadex_chapters(t, "en")
             cnt = await db.episodes.count_documents({"title_id": t["id"]})
             if cnt == 0:
                 await db.titles.update_one({"id": t["id"]}, {"$set": {"has_chapters": False}})
@@ -757,6 +771,31 @@ async def cleanup_empty(_: dict = Depends(require_admin)):
 
     await asyncio.gather(*[check(t) for t in titles_to_check])
     return {"checked": len(titles_to_check), "with_chapters": len(fetched), "without_chapters": len(empty)}
+
+@api.post("/admin/fetch_language")
+async def fetch_language(lang: str = "ar", _: dict = Depends(require_admin)):
+    """Bulk-fetch chapters in a given language for ALL visible titles."""
+    import asyncio
+    titles = await db.titles.find(
+        {"mangadex_id": {"$exists": True}, "has_chapters": True, "langs_fetched": {"$ne": lang}},
+        {"_id": 0, "id": 1, "mangadex_id": 1},
+    ).to_list(5000)
+
+    sem = asyncio.Semaphore(6)
+    counts = {"with": 0, "without": 0}
+
+    async def fetch(t):
+        async with sem:
+            before = await db.episodes.count_documents({"title_id": t["id"], "language": lang})
+            await _fetch_and_cache_mangadex_chapters(t, lang)
+            after = await db.episodes.count_documents({"title_id": t["id"], "language": lang})
+            if after > before:
+                counts["with"] += 1
+            else:
+                counts["without"] += 1
+
+    await asyncio.gather(*[fetch(t) for t in titles])
+    return {"checked": len(titles), "got_chapters": counts["with"], "no_chapters_in_lang": counts["without"]}
 
 @api.get("/proxy/image")
 async def proxy_image(url: str):
