@@ -179,7 +179,8 @@ async def update_me(data: ProfileUpdate, user: dict = Depends(get_current_user))
 # -------- Titles --------
 @api.get("/titles")
 async def list_titles(type: Optional[str] = None, q: Optional[str] = None, limit: int = 60):
-    query = {}
+    # Exclude titles known to have no available chapters
+    query = {"has_chapters": {"$ne": False}}
     if type:
         query["type"] = type
     if q:
@@ -502,6 +503,11 @@ async def list_episodes(tid: str):
     if not items and title.get("mangadex_id"):
         await _fetch_and_cache_mangadex_chapters(title)
         items = await db.episodes.find({"title_id": tid}, {"_id": 0}).sort("number", 1).to_list(2000)
+        # If still empty after fetching, mark as having no chapters so it disappears from catalog
+        if not items:
+            await db.titles.update_one({"id": tid}, {"$set": {"has_chapters": False}})
+        else:
+            await db.titles.update_one({"id": tid}, {"$set": {"has_chapters": True}})
     return items
 
 @api.get("/episodes/{eid}/pages")
@@ -702,6 +708,39 @@ async def import_mangadex(ttype: str = "manga", total: int = 500, _: dict = Depe
     langs = ["ja"] if ttype == "manga" else ["ko"]
     count = await _import_mangadex_batch(ttype, langs, min(total, 1000))
     return {"ok": True, "inserted": count}
+
+@api.post("/admin/cleanup_empty")
+async def cleanup_empty(_: dict = Depends(require_admin)):
+    """Scan all MangaDex-linked titles concurrently, fetch their chapters, and mark
+    those with no English chapters as has_chapters=False so they disappear from catalog."""
+    import asyncio
+    titles_to_check = await db.titles.find(
+        {"mangadex_id": {"$exists": True}, "has_chapters": {"$ne": False}},
+        {"_id": 0, "id": 1, "mangadex_id": 1, "title": 1},
+    ).to_list(5000)
+
+    sem = asyncio.Semaphore(8)
+    empty = []
+    fetched = []
+
+    async def check(t):
+        async with sem:
+            existing = await db.episodes.count_documents({"title_id": t["id"]})
+            if existing > 0:
+                await db.titles.update_one({"id": t["id"]}, {"$set": {"has_chapters": True}})
+                fetched.append(t["id"])
+                return
+            await _fetch_and_cache_mangadex_chapters(t)
+            cnt = await db.episodes.count_documents({"title_id": t["id"]})
+            if cnt == 0:
+                await db.titles.update_one({"id": t["id"]}, {"$set": {"has_chapters": False}})
+                empty.append(t["id"])
+            else:
+                await db.titles.update_one({"id": t["id"]}, {"$set": {"has_chapters": True}})
+                fetched.append(t["id"])
+
+    await asyncio.gather(*[check(t) for t in titles_to_check])
+    return {"checked": len(titles_to_check), "with_chapters": len(fetched), "without_chapters": len(empty)}
 
 @api.get("/proxy/image")
 async def proxy_image(url: str):

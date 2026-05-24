@@ -179,6 +179,20 @@ export default function Admin() {
           >
             استيراد 500 مانهوا
           </Button>
+          <Button
+            onClick={async () => {
+              toast.info("جارٍ فحص العناوين الفارغة وإخفاؤها...");
+              try {
+                const { data } = await api.post("/admin/cleanup_empty", null, { timeout: 600000 });
+                toast.success(`تم الفحص: ${data.with_chapters} لديها فصول، أُخفي ${data.without_chapters}`);
+                load();
+              } catch (e) { toast.error(fmtError(e.response?.data?.detail)); }
+            }}
+            variant="ghost"
+            data-testid="cleanup-empty-btn"
+          >
+            تنظيف العناوين بدون فصول
+          </Button>
         </div>
       </section>
 
