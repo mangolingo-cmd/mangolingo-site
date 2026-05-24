@@ -608,7 +608,7 @@ def _md_genres(tags: list) -> list:
             out.append(n)
     return out[:8]
 
-async def _import_mangadex_batch(ttype: str, original_languages: list, total: int, start_offset: int = 0) -> int:
+async def _import_mangadex_batch(ttype: str, original_languages: list, total: int, start_offset: int = 0, order: str = "followedCount") -> int:
     """Bulk-import manga/manhwa metadata from MangaDex."""
     inserted = 0
     per_page = 100
@@ -620,7 +620,7 @@ async def _import_mangadex_batch(ttype: str, original_languages: list, total: in
                 ("availableTranslatedLanguage[]", "en"),
                 ("contentRating[]", "safe"),
                 ("contentRating[]", "suggestive"),
-                ("order[followedCount]", "desc"),
+                (f"order[{order}]", "desc"),
                 ("includes[]", "cover_art"),
             ]
             for lang in original_languages:
@@ -736,13 +736,13 @@ async def _fetch_and_cache_mangadex_chapters(title: dict, lang: str = "en"):
     return inserted
 
 @api.post("/admin/import_mangadex")
-async def import_mangadex(ttype: str = "manga", total: int = 500, _: dict = Depends(require_admin)):
+async def import_mangadex(ttype: str = "manga", total: int = 500, order: str = "followedCount", _: dict = Depends(require_admin)):
     if ttype not in ("manga", "manhwa"):
         raise HTTPException(400, "نوع غير صالح: manga أو manhwa فقط")
     langs = ["ja"] if ttype == "manga" else ["ko"]
     # Skip past titles we've already imported for this type — fetch the next batch
     existing = await db.titles.count_documents({"type": ttype, "mangadex_id": {"$exists": True}})
-    count = await _import_mangadex_batch(ttype, langs, min(total, 1000), start_offset=existing)
+    count = await _import_mangadex_batch(ttype, langs, min(total, 1000), start_offset=existing if order == "followedCount" else 0, order=order)
     return {"ok": True, "inserted": count, "started_at_offset": existing}
 
 @api.post("/admin/cleanup_empty")

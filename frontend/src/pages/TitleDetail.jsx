@@ -186,7 +186,13 @@ export default function TitleDetail() {
               </p>
             </div>
           ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <>
+              {episodes.length > 1 && episodes[episodes.length - 1].number - episodes[0].number > episodes.length + 5 && (
+                <div className="text-xs text-muted-foreground bg-secondary/40 border border-border rounded-md p-3 mb-4" data-testid="gaps-notice">
+                  ℹ️ <strong>ملاحظة</strong>: قد تلاحظ فجوات في أرقام الفصول. هذا لأن فرق الترجمة المختلفة لم تُترجم كل الفصول. الفصول المُتوفرة بهذه اللغة فقط هي المعروضة هنا.
+                </div>
+              )}
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {episodes.map((ep) => (
                 <Link
                   key={ep.id}
@@ -205,6 +211,7 @@ export default function TitleDetail() {
                 </Link>
               ))}
             </div>
+            </>
           )}
         </TabsContent>
 
