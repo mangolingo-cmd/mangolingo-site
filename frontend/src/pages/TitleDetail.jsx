@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Star, MessageSquare, Bookmark } from "lucide-react";
+import { Star, MessageSquare, Bookmark, PlayCircle, BookOpen } from "lucide-react";
 import ChatRoom from "@/components/ChatRoom";
 
 const STATUS_LABEL = {
@@ -23,20 +23,27 @@ export default function TitleDetail() {
   const { id } = useParams();
   const [t, setT] = useState(null);
   const [reviews, setReviews] = useState([]);
+  const [episodes, setEpisodes] = useState([]);
   const [rating, setRating] = useState(8);
   const [content, setContent] = useState("");
   const [wlStatus, setWlStatus] = useState("");
 
   const load = async () => {
-    const [a, b] = await Promise.all([
-      api.get(`/titles/${id}`),
-      api.get(`/titles/${id}/reviews`),
-    ]);
-    setT(a.data);
-    setReviews(b.data);
+    try {
+      const [a, b, c] = await Promise.all([
+        api.get(`/titles/${id}`),
+        api.get(`/titles/${id}/reviews`),
+        api.get(`/titles/${id}/episodes`),
+      ]);
+      setT(a.data);
+      setReviews(b.data);
+      setEpisodes(c.data);
+    } catch (e) {
+      toast.error("تعذر تحميل العنوان");
+    }
   };
 
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
 
   const submitReview = async () => {
     if (!content.trim()) return toast.error("اكتب مراجعتك أولاً");
@@ -60,7 +67,9 @@ export default function TitleDetail() {
     }
   };
 
-  if (!t) return <div className="text-center py-20 text-muted-foreground">جارٍ التحميل…</div>;
+  if (!t) return <div className="text-center py-20 text-muted-foreground" data-testid="title-loading">جارٍ التحميل…</div>;
+
+  const isAnime = t.type === "anime";
 
   return (
     <div className="space-y-8" data-testid="title-detail-page">
@@ -72,7 +81,7 @@ export default function TitleDetail() {
         </div>
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <Badge className="bg-primary text-white border-0">{t.type === "anime" ? "أنمي" : t.type === "manhwa" ? "مانهوا" : "مانجا"}</Badge>
+            <Badge className="bg-primary text-white border-0">{isAnime ? "أنمي" : t.type === "manhwa" ? "مانهوا" : "مانجا"}</Badge>
             {t.status && <Badge variant="outline" className="border-border text-muted-foreground">{t.status === "ongoing" ? "مستمر" : "مكتمل"}</Badge>}
             {t.year && <Badge variant="outline" className="border-border text-muted-foreground">{t.year}</Badge>}
           </div>
@@ -94,27 +103,69 @@ export default function TitleDetail() {
             {(t.genres || []).map((g) => <Badge key={g} variant="secondary" className="bg-secondary">{g}</Badge>)}
           </div>
           <div className="flex gap-3 pt-2 items-center flex-wrap">
+            {episodes.length > 0 && (
+              <Link to={`/title/${id}/episode/${episodes[0].id}`}>
+                <Button className="bg-primary hover:bg-primary/90 font-bold" data-testid="start-watching-btn">
+                  {isAnime ? <PlayCircle className="w-4 h-4 me-1" /> : <BookOpen className="w-4 h-4 me-1" />}
+                  {isAnime ? "ابدأ المشاهدة" : "ابدأ القراءة"}
+                </Button>
+              </Link>
+            )}
             <Select value={wlStatus} onValueChange={setWatch}>
               <SelectTrigger className="w-48 bg-[#0F111A]" data-testid="watchlist-select">
                 <Bookmark className="w-4 h-4 me-2" />
                 <SelectValue placeholder="أضف إلى قائمتي" />
               </SelectTrigger>
               <SelectContent>
-                {Object.entries(STATUS_LABEL).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+                {Object.entries(STATUS_LABEL).map(([k, v]) => <SelectItem key={k} value={k} data-testid={`wl-opt-${k}`}>{v}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
         </div>
       </div>
 
-      <Tabs defaultValue="discuss" className="mt-8">
+      <Tabs defaultValue="episodes" className="mt-8">
         <TabsList className="bg-[#0F111A]">
+          <TabsTrigger value="episodes" data-testid="tab-episodes">
+            {isAnime ? <PlayCircle className="w-4 h-4 me-1" /> : <BookOpen className="w-4 h-4 me-1" />}
+            {isAnime ? "الحلقات" : "الفصول"} ({episodes.length})
+          </TabsTrigger>
           <TabsTrigger value="discuss" data-testid="tab-discuss"><MessageSquare className="w-4 h-4 me-1" />غرفة النقاش</TabsTrigger>
           <TabsTrigger value="reviews" data-testid="tab-reviews"><Star className="w-4 h-4 me-1" />المراجعات ({reviews.length})</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="episodes" className="mt-4" data-testid="episodes-tab-content">
+          {episodes.length === 0 ? (
+            <p className="text-muted-foreground text-center py-12 border border-dashed border-border rounded-lg">
+              لم تُضف {isAnime ? "حلقات" : "فصول"} بعد
+            </p>
+          ) : (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {episodes.map((ep) => (
+                <Link
+                  key={ep.id}
+                  to={`/title/${id}/episode/${ep.id}`}
+                  className="flex items-center gap-3 bg-[#0F111A] border border-border rounded-lg p-3 hover:border-primary/50 transition group"
+                  data-testid={`episode-item-${ep.id}`}
+                >
+                  <div className="w-12 h-12 rounded-md bg-primary/15 text-primary grid place-items-center font-display font-black shrink-0 group-hover:bg-primary group-hover:text-white transition">
+                    {ep.number}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold truncate">{ep.name || (isAnime ? `الحلقة ${ep.number}` : `الفصل ${ep.number}`)}</div>
+                    <div className="text-xs text-muted-foreground">{isAnime ? "اضغط للمشاهدة" : "اضغط للقراءة"}</div>
+                  </div>
+                  {isAnime ? <PlayCircle className="w-5 h-5 text-muted-foreground" /> : <BookOpen className="w-5 h-5 text-muted-foreground" />}
+                </Link>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
         <TabsContent value="discuss" className="mt-4">
           <ChatRoom roomId={id} title="ناقش هذا العمل" />
         </TabsContent>
+
         <TabsContent value="reviews" className="mt-4 space-y-4">
           <div className="bg-[#0F111A] border border-border rounded-lg p-4 space-y-3">
             <div className="flex items-center gap-3">

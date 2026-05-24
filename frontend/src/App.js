@@ -14,6 +14,7 @@ import DMThread from "@/pages/DMThread";
 import Friends from "@/pages/Friends";
 import Profile from "@/pages/Profile";
 import Admin from "@/pages/Admin";
+import EpisodeView from "@/pages/EpisodeView";
 
 function Protected({ children, adminOnly }) {
   const { user, loading } = useAuth();
@@ -34,6 +35,7 @@ function App() {
           <Route element={<Protected><Layout /></Protected>}>
             <Route path="/" element={<Home />} />
             <Route path="/title/:id" element={<TitleDetail />} />
+            <Route path="/title/:id/episode/:epId" element={<EpisodeView />} />
             <Route path="/lobby" element={<Lobby />} />
             <Route path="/messages" element={<DMList />} />
             <Route path="/messages/:userId" element={<DMThread />} />

@@ -484,6 +484,53 @@ async def read_all(user: dict = Depends(get_current_user)):
     await db.notifications.update_many({"user_id": user["id"], "read": False}, {"$set": {"read": True}})
     return {"ok": True}
 
+# -------- Episodes / Chapters --------
+class EpisodeIn(BaseModel):
+    number: float
+    name: Optional[str] = ""
+    video_url: Optional[str] = ""  # for anime
+    pages: List[str] = []           # for manga/manhwa
+
+@api.get("/titles/{tid}/episodes")
+async def list_episodes(tid: str):
+    items = await db.episodes.find({"title_id": tid}, {"_id": 0}).sort("number", 1).to_list(2000)
+    return items
+
+@api.get("/titles/{tid}/episodes/{eid}")
+async def get_episode(tid: str, eid: str, user: dict = Depends(get_current_user)):
+    ep = await db.episodes.find_one({"id": eid, "title_id": tid}, {"_id": 0})
+    if not ep:
+        raise HTTPException(404, "الحلقة غير موجودة")
+    return ep
+
+@api.post("/titles/{tid}/episodes")
+async def create_episode(tid: str, data: EpisodeIn, _: dict = Depends(require_admin)):
+    title = await db.titles.find_one({"id": tid})
+    if not title:
+        raise HTTPException(404, "العنوان غير موجود")
+    eid = str(uuid.uuid4())
+    doc = {
+        "id": eid,
+        "title_id": tid,
+        "number": data.number,
+        "name": data.name or "",
+        "video_url": data.video_url or "",
+        "pages": data.pages or [],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.episodes.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+@api.delete("/titles/{tid}/episodes/{eid}")
+async def delete_episode(tid: str, eid: str, _: dict = Depends(require_admin)):
+    await db.episodes.delete_one({"id": eid, "title_id": tid})
+    return {"ok": True}
+
+@api.get("/")
+async def root():
+    return {"ok": True, "name": "Otaku Hub"}
+
 # -------- Startup --------
 app.include_router(api)
 
@@ -575,6 +622,7 @@ async def on_start():
     await db.titles.create_index("id", unique=True)
     await db.messages.create_index([("room_id", 1), ("created_at", -1)])
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
+    await db.episodes.create_index([("title_id", 1), ("number", 1)])
 
     # seed admin
     existing = await db.users.find_one({"email": ADMIN_EMAIL.lower()})
@@ -595,14 +643,48 @@ async def on_start():
     count = await db.titles.count_documents({})
     if count == 0:
         for t in SAMPLE_TITLES:
+            tid = str(uuid.uuid4())
             doc = {**t,
-                   "id": str(uuid.uuid4()),
+                   "id": tid,
                    "banner_url": t.get("cover_url", ""),
                    "rating_avg": 0,
                    "rating_count": 0,
                    "created_at": datetime.now(timezone.utc).isoformat()}
             await db.titles.insert_one(doc)
         logger.info("Seeded sample titles")
+
+    # seed sample episodes/chapters (separately, in case titles already exist)
+    ep_count = await db.episodes.count_documents({})
+    if ep_count == 0:
+        all_titles = await db.titles.find({}, {"_id": 0}).to_list(1000)
+        for t in all_titles:
+            ttype = t["type"]
+            total = t.get("episodes") if ttype == "anime" else t.get("chapters")
+            if not total:
+                continue
+            n = min(int(total), 12)
+            for i in range(1, n + 1):
+                if ttype == "anime":
+                    ep = {
+                        "id": str(uuid.uuid4()), "title_id": t["id"], "number": i,
+                        "name": f"الحلقة {i}",
+                        "video_url": "https://www.youtube.com/embed/dQw4w9WgXcQ",
+                        "pages": [],
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                else:
+                    ep = {
+                        "id": str(uuid.uuid4()), "title_id": t["id"], "number": i,
+                        "name": f"الفصل {i}",
+                        "video_url": "",
+                        "pages": [
+                            f"https://picsum.photos/seed/{t['id'][:6]}-{i}-{p}/800/1200"
+                            for p in range(1, 6)
+                        ],
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                await db.episodes.insert_one(ep)
+        logger.info("Seeded sample episodes")
 
 @app.on_event("shutdown")
 async def on_stop():
