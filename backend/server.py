@@ -494,21 +494,33 @@ class EpisodeIn(BaseModel):
     pages: List[str] = []           # for manga/manhwa
 
 @api.get("/titles/{tid}/episodes")
-async def list_episodes(tid: str):
+async def list_episodes(tid: str, lang: str = "en"):
     title = await db.titles.find_one({"id": tid}, {"_id": 0})
     if not title:
         raise HTTPException(404, "العنوان غير موجود")
-    items = await db.episodes.find({"title_id": tid}, {"_id": 0}).sort("number", 1).to_list(2000)
-    # Lazy-load chapters from MangaDex if linked and not yet cached
-    if not items and title.get("mangadex_id"):
-        await _fetch_and_cache_mangadex_chapters(title)
-        items = await db.episodes.find({"title_id": tid}, {"_id": 0}).sort("number", 1).to_list(2000)
-        # If still empty after fetching, mark as having no chapters so it disappears from catalog
-        if not items:
-            await db.titles.update_one({"id": tid}, {"$set": {"has_chapters": False}})
-        else:
-            await db.titles.update_one({"id": tid}, {"$set": {"has_chapters": True}})
+    # Lazy-load this language if never fetched and title has MangaDex link
+    if title.get("mangadex_id") and lang not in (title.get("langs_fetched") or []):
+        await _fetch_and_cache_mangadex_chapters(title, lang)
+    # Old episodes without language field are treated as English
+    if lang == "en":
+        query = {"title_id": tid, "$or": [{"language": "en"}, {"language": {"$exists": False}}]}
+    else:
+        query = {"title_id": tid, "language": lang}
+    items = await db.episodes.find(query, {"_id": 0}).sort("number", 1).to_list(2000)
     return items
+
+@api.get("/titles/{tid}/languages")
+async def list_languages(tid: str):
+    """Return list of languages that have chapters for this title."""
+    title = await db.titles.find_one({"id": tid}, {"_id": 0})
+    if not title:
+        raise HTTPException(404, "العنوان غير موجود")
+    langs = await db.episodes.distinct("language", {"title_id": tid})
+    # Also include legacy episodes that have no language field (treat as en)
+    legacy = await db.episodes.count_documents({"title_id": tid, "language": {"$exists": False}})
+    if legacy and "en" not in langs:
+        langs.append("en")
+    return {"languages": [l for l in langs if l]}
 
 @api.get("/episodes/{eid}/pages")
 async def get_episode_pages(eid: str, user: dict = Depends(get_current_user)):
@@ -657,8 +669,8 @@ async def _import_mangadex_batch(ttype: str, original_languages: list, total: in
                     pass
     return inserted
 
-async def _fetch_and_cache_mangadex_chapters(title: dict):
-    """Fetch chapters list for a MangaDex title and store in episodes collection. Limit 200."""
+async def _fetch_and_cache_mangadex_chapters(title: dict, lang: str = "en"):
+    """Fetch chapters list for a MangaDex title in given language and store. Limit 200."""
     md_id = title.get("mangadex_id")
     if not md_id:
         return
@@ -668,7 +680,7 @@ async def _fetch_and_cache_mangadex_chapters(title: dict):
                 f"{MANGADEX_BASE}/manga/{md_id}/feed",
                 params=[
                     ("limit", "300"),
-                    ("translatedLanguage[]", "en"),
+                    ("translatedLanguage[]", lang),
                     ("order[chapter]", "asc"),
                     ("contentRating[]", "safe"),
                     ("contentRating[]", "suggestive"),
@@ -676,7 +688,8 @@ async def _fetch_and_cache_mangadex_chapters(title: dict):
             )
             r.raise_for_status()
         except Exception:
-            logger.exception("MangaDex chapters fetch failed for %s", md_id)
+            logger.exception("MangaDex chapters fetch failed for %s lang=%s", md_id, lang)
+            await db.titles.update_one({"id": title["id"]}, {"$addToSet": {"langs_fetched": lang}})
             return
         data = r.json().get("data") or []
         seen_numbers = set()
@@ -696,10 +709,13 @@ async def _fetch_and_cache_mangadex_chapters(title: dict):
                 "mangadex_chapter_id": ch.get("id"),
                 "number": ch_num,
                 "name": attrs.get("title") or "",
+                "language": lang,
                 "video_url": "",
                 "pages": [],
                 "created_at": datetime.now(timezone.utc).isoformat(),
             })
+        # Mark this language as fetched (so we don't retry empty fetches)
+        await db.titles.update_one({"id": title["id"]}, {"$addToSet": {"langs_fetched": lang}})
 
 @api.post("/admin/import_mangadex")
 async def import_mangadex(ttype: str = "manga", total: int = 500, _: dict = Depends(require_admin)):

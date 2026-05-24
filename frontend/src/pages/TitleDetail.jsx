@@ -24,26 +24,46 @@ export default function TitleDetail() {
   const [t, setT] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [episodes, setEpisodes] = useState([]);
+  const [lang, setLang] = useState("en");
+  const [loadingEps, setLoadingEps] = useState(false);
   const [rating, setRating] = useState(8);
   const [content, setContent] = useState("");
   const [wlStatus, setWlStatus] = useState("");
 
-  const load = async () => {
+  const loadTitle = async () => {
     try {
-      const [a, b, c] = await Promise.all([
+      const [a, b] = await Promise.all([
         api.get(`/titles/${id}`),
         api.get(`/titles/${id}/reviews`),
-        api.get(`/titles/${id}/episodes`),
       ]);
       setT(a.data);
       setReviews(b.data);
-      setEpisodes(c.data);
     } catch (e) {
       toast.error("تعذر تحميل العنوان");
     }
   };
 
+  const loadEpisodes = async (l) => {
+    setLoadingEps(true);
+    try {
+      const r = await api.get(`/titles/${id}/episodes`, { params: { lang: l } });
+      setEpisodes(r.data);
+    } finally {
+      setLoadingEps(false);
+    }
+  };
+
+  const load = async () => {
+    await loadTitle();
+    await loadEpisodes(lang);
+  };
+
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
+
+  useEffect(() => {
+    if (t) loadEpisodes(lang);
+    /* eslint-disable-next-line */
+  }, [lang]);
 
   const submitReview = async () => {
     if (!content.trim()) return toast.error("اكتب مراجعتك أولاً");
@@ -135,14 +155,34 @@ export default function TitleDetail() {
         </TabsList>
 
         <TabsContent value="episodes" className="mt-4" data-testid="episodes-tab-content">
-          {episodes.length === 0 ? (
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-3" data-testid="lang-switcher">
+            <p className="text-sm text-muted-foreground">اختر لغة الترجمة:</p>
+            <div className="inline-flex rounded-md border border-border overflow-hidden">
+              <button
+                onClick={() => setLang("ar")}
+                className={`px-4 py-2 text-sm font-bold transition ${lang === "ar" ? "bg-primary text-white" : "bg-[#0F111A] text-muted-foreground hover:text-foreground"}`}
+                data-testid="lang-ar"
+              >
+                🇸🇦 العربية
+              </button>
+              <button
+                onClick={() => setLang("en")}
+                className={`px-4 py-2 text-sm font-bold transition ${lang === "en" ? "bg-primary text-white" : "bg-[#0F111A] text-muted-foreground hover:text-foreground"}`}
+                data-testid="lang-en"
+              >
+                🇬🇧 English
+              </button>
+            </div>
+          </div>
+          {loadingEps ? (
+            <div className="text-center py-12 text-muted-foreground" data-testid="eps-loading">جارٍ جلب الفصول بالـ {lang === "ar" ? "العربية" : "الإنجليزية"}…</div>
+          ) : episodes.length === 0 ? (
             <div className="text-center py-12 border border-dashed border-border rounded-lg space-y-3" data-testid="episodes-empty">
               <p className="text-muted-foreground">
-                لم تُضف {isAnime ? "حلقات" : "فصول"} لهذا العنوان بعد.
+                لا توجد فصول {lang === "ar" ? "عربية" : "إنجليزية"} لهذا العنوان.
               </p>
               <p className="text-xs text-muted-foreground">
-                يمكن للمدير إضافتها من <Link to="/admin" className="text-primary font-bold hover:underline">لوحة الإدارة</Link>{" "}
-                {isAnime ? "بإضافة روابط YouTube embed أو روابط فيديو" : "بإضافة روابط صور الصفحات"}.
+                جرّب تبديل اللغة، أو اطلب من المدير إضافة فصول من <Link to="/admin" className="text-primary font-bold hover:underline">لوحة الإدارة</Link>.
               </p>
             </div>
           ) : (
