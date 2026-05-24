@@ -2,17 +2,25 @@ import React, { useEffect, useState } from "react";
 import api from "@/api";
 import TitleCard from "@/components/TitleCard";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Search, Flame } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Search, Flame, X } from "lucide-react";
+import { arGenre } from "@/lib/genres";
 
 const HERO = "https://images.unsplash.com/photo-1752338384552-1cda3350baba?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Nzh8MHwxfHNlYXJjaHw0fHx0b2t5byUyMG5pZ2h0JTIwYWxsZXl8ZW58MHx8fHwxNzc4NTA5MDMwfDA&ixlib=rb-4.1.0&q=85";
 
 export default function Home() {
   const [titles, setTitles] = useState([]);
+  const [genres, setGenres] = useState([]);
   const [q, setQ] = useState("");
   const [type, setType] = useState("all");
   const [arOnly, setArOnly] = useState(false);
+  const [genre, setGenre] = useState("");
   const [loading, setLoading] = useState(true);
+
+  // Load genres once
+  useEffect(() => {
+    api.get("/genres").then(({ data }) => setGenres(data)).catch(() => {});
+  }, []);
 
   const load = async () => {
     setLoading(true);
@@ -21,6 +29,7 @@ export default function Home() {
       if (type !== "all") params.type = type;
       if (q) params.q = q;
       if (arOnly) params.ar_only = true;
+      if (genre) params.genre = genre;
       const { data } = await api.get("/titles", { params });
       setTitles(data);
     } finally {
@@ -32,16 +41,13 @@ export default function Home() {
     const id = setTimeout(load, 200);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, type, arOnly]);
+  }, [q, type, arOnly, genre]);
 
   return (
     <div className="space-y-8" data-testid="home-page">
       {/* Hero */}
       <section className="relative rounded-2xl overflow-hidden border border-border" data-testid="hero-section">
-        <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url(${HERO})` }}
-        />
+        <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${HERO})` }} />
         <div className="absolute inset-0 bg-gradient-to-l from-black via-black/70 to-black/30" />
         <div className="relative p-8 sm:p-14 max-w-2xl">
           <div className="inline-flex items-center gap-2 bg-primary/15 text-primary px-3 py-1 rounded-full text-sm font-bold mb-4">
@@ -59,7 +65,7 @@ export default function Home() {
 
       {/* Search + tabs */}
       <section>
-        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center mb-5">
+        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center mb-4">
           <div className="relative flex-1">
             <Search className="w-4 h-4 absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -85,6 +91,43 @@ export default function Home() {
             عربي فقط {arOnly ? "✓" : ""}
           </button>
         </div>
+
+        {/* Genre chips */}
+        {genres.length > 0 && (
+          <div className="mb-6" data-testid="genres-bar">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-sm font-bold text-muted-foreground">التصنيف:</span>
+              {genre && (
+                <button
+                  onClick={() => setGenre("")}
+                  className="text-xs text-primary hover:underline flex items-center gap-1"
+                  data-testid="clear-genre"
+                >
+                  <X className="w-3 h-3" /> مسح
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto pb-1">
+              {genres.map((g) => (
+                <button
+                  key={g.name}
+                  onClick={() => setGenre(genre === g.name ? "" : g.name)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold transition border ${
+                    genre === g.name
+                      ? "bg-primary text-white border-primary"
+                      : "bg-[#0F111A] text-muted-foreground border-border hover:text-foreground hover:border-primary/50"
+                  }`}
+                  data-testid={`genre-chip-${g.name}`}
+                >
+                  {arGenre(g.name)}{" "}
+                  <span className={genre === g.name ? "text-white/70" : "text-muted-foreground/60"}>
+                    ({g.count})
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <div className="text-muted-foreground text-center py-12">جارٍ التحميل…</div>

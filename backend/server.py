@@ -178,7 +178,7 @@ async def update_me(data: ProfileUpdate, user: dict = Depends(get_current_user))
 
 # -------- Titles --------
 @api.get("/titles")
-async def list_titles(type: Optional[str] = None, q: Optional[str] = None, ar_only: bool = False, limit: int = 60):
+async def list_titles(type: Optional[str] = None, q: Optional[str] = None, ar_only: bool = False, genre: Optional[str] = None, limit: int = 60):
     # Exclude titles known to have no available chapters
     query = {"has_chapters": {"$ne": False}}
     if type:
@@ -190,9 +190,23 @@ async def list_titles(type: Optional[str] = None, q: Optional[str] = None, ar_on
         ]
     if ar_only:
         query["has_ar"] = True
+    if genre:
+        query["genres"] = genre
     # Sort: titles with Arabic first, then by created_at
     items = await db.titles.find(query, {"_id": 0}).sort([("has_ar", -1), ("created_at", -1)]).to_list(limit)
     return items
+
+@api.get("/genres")
+async def list_genres():
+    pipeline = [
+        {"$match": {"has_chapters": True}},
+        {"$unwind": "$genres"},
+        {"$group": {"_id": "$genres", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 40},
+    ]
+    items = await db.titles.aggregate(pipeline).to_list(60)
+    return [{"name": g["_id"], "count": g["count"]} for g in items if g.get("_id")]
 
 @api.get("/titles/{tid}")
 async def get_title(tid: str):

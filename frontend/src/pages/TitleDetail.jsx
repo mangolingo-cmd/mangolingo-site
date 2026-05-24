@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import api, { fmtError, proxyImg } from "@/api";
+import { arGenre } from "@/lib/genres";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -120,7 +121,7 @@ export default function TitleDetail() {
           </div>
           <p className="leading-7 text-foreground/90">{t.synopsis}</p>
           <div className="flex gap-2 flex-wrap">
-            {(t.genres || []).map((g) => <Badge key={g} variant="secondary" className="bg-secondary">{g}</Badge>)}
+            {(t.genres || []).map((g) => <Badge key={g} variant="secondary" className="bg-secondary">{arGenre(g)}</Badge>)}
           </div>
           <div className="flex gap-3 pt-2 items-center flex-wrap">
             {episodes.length > 0 && (
