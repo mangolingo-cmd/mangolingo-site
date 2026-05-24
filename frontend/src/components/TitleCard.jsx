@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { proxyImg } from "@/api";
 
 const typeLabel = { manhwa: "مانهوا", manga: "مانجا" };
 
@@ -15,7 +16,7 @@ export default function TitleCard({ title }) {
       <div className="relative aspect-[2/3] bg-secondary overflow-hidden">
         {title.cover_url ? (
           <img
-            src={title.cover_url}
+            src={proxyImg(title.cover_url)}
             alt={title.title_ar || title.title}
             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
           />

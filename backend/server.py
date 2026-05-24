@@ -703,6 +703,27 @@ async def import_mangadex(ttype: str = "manga", total: int = 500, _: dict = Depe
     count = await _import_mangadex_batch(ttype, langs, min(total, 1000))
     return {"ok": True, "inserted": count}
 
+@api.get("/proxy/image")
+async def proxy_image(url: str):
+    """Proxy MangaDex/MangaDex-CDN images through our backend to bypass
+    referrer/rate-limit issues when loaded directly from the browser."""
+    from fastapi.responses import Response
+    allowed = ("mangadex.network", "mangadex.org")
+    if not any(host in url for host in allowed):
+        raise HTTPException(400, "URL غير مسموح")
+    try:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as h:
+            # MangaDex serves the image fine to Python-default UA, but 403s fake browsers.
+            r = await h.get(url)
+            r.raise_for_status()
+            return Response(
+                content=r.content,
+                media_type=r.headers.get("content-type", "image/jpeg"),
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"تعذر جلب الصورة: {e}")
+
 @api.get("/")
 async def root():
     return {"ok": True, "name": "Otaku Hub"}

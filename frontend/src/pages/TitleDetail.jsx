@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import api, { fmtError } from "@/api";
+import api, { fmtError, proxyImg } from "@/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -77,7 +77,7 @@ export default function TitleDetail() {
 
       <div className="grid md:grid-cols-[260px_1fr] gap-8">
         <div className="aspect-[2/3] rounded-xl overflow-hidden bg-[#0F111A] border border-border">
-          {t.cover_url && <img src={t.cover_url} alt={t.title_ar || t.title} className="w-full h-full object-cover" />}
+          {t.cover_url && <img src={proxyImg(t.cover_url)} alt={t.title_ar || t.title} className="w-full h-full object-cover" />}
         </div>
         <div className="space-y-4">
           <div className="flex items-center gap-2">

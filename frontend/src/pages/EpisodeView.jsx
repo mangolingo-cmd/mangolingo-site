@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import api from "@/api";
+import api, { proxyImg } from "@/api";
 import { Button } from "@/components/ui/button";
 import { ChevronRight, ChevronLeft, ArrowRight, Loader2 } from "lucide-react";
 
@@ -83,7 +83,7 @@ export default function EpisodeView() {
           ) : pages.length === 0 ? (
             <p className="text-center text-muted-foreground py-12">لا توجد صفحات متاحة</p>
           ) : pages.map((p, i) => (
-            <img key={i} src={p} alt={`Page ${i + 1}`} className="w-full rounded-lg border border-border" loading="lazy" referrerPolicy="no-referrer" />
+            <img key={i} src={proxyImg(p)} alt={`Page ${i + 1}`} className="w-full rounded-lg border border-border" />
           ))}
         </div>
       )}
