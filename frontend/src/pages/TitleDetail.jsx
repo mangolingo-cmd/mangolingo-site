@@ -136,9 +136,15 @@ export default function TitleDetail() {
 
         <TabsContent value="episodes" className="mt-4" data-testid="episodes-tab-content">
           {episodes.length === 0 ? (
-            <p className="text-muted-foreground text-center py-12 border border-dashed border-border rounded-lg">
-              لم تُضف {isAnime ? "حلقات" : "فصول"} بعد
-            </p>
+            <div className="text-center py-12 border border-dashed border-border rounded-lg space-y-3" data-testid="episodes-empty">
+              <p className="text-muted-foreground">
+                لم تُضف {isAnime ? "حلقات" : "فصول"} لهذا العنوان بعد.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                يمكن للمدير إضافتها من <Link to="/admin" className="text-primary font-bold hover:underline">لوحة الإدارة</Link>{" "}
+                {isAnime ? "بإضافة روابط YouTube embed أو روابط فيديو" : "بإضافة روابط صور الصفحات"}.
+              </p>
+            </div>
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {episodes.map((ep) => (

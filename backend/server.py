@@ -656,35 +656,27 @@ async def on_start():
     # seed sample episodes/chapters (separately, in case titles already exist)
     ep_count = await db.episodes.count_documents({})
     if ep_count == 0:
-        all_titles = await db.titles.find({}, {"_id": 0}).to_list(1000)
+        # Only seed anime trailers (legit public content). Manga/manhwa chapters
+        # must be added by admin via the panel since we can't host copyrighted pages.
+        trailers = {
+            "Attack on Titan": "https://www.youtube.com/embed/MGRm4IzK1SQ",
+            "Demon Slayer": "https://www.youtube.com/embed/VQGCKyvzIM4",
+        }
+        all_titles = await db.titles.find({"type": "anime"}, {"_id": 0}).to_list(1000)
         for t in all_titles:
-            ttype = t["type"]
-            total = t.get("episodes") if ttype == "anime" else t.get("chapters")
-            if not total:
+            url = trailers.get(t["title"], "")
+            if not url:
                 continue
-            n = min(int(total), 12)
-            for i in range(1, n + 1):
-                if ttype == "anime":
-                    ep = {
-                        "id": str(uuid.uuid4()), "title_id": t["id"], "number": i,
-                        "name": f"الحلقة {i}",
-                        "video_url": "https://www.youtube.com/embed/dQw4w9WgXcQ",
-                        "pages": [],
-                        "created_at": datetime.now(timezone.utc).isoformat(),
-                    }
-                else:
-                    ep = {
-                        "id": str(uuid.uuid4()), "title_id": t["id"], "number": i,
-                        "name": f"الفصل {i}",
-                        "video_url": "",
-                        "pages": [
-                            f"https://picsum.photos/seed/{t['id'][:6]}-{i}-{p}/800/1200"
-                            for p in range(1, 6)
-                        ],
-                        "created_at": datetime.now(timezone.utc).isoformat(),
-                    }
-                await db.episodes.insert_one(ep)
-        logger.info("Seeded sample episodes")
+            await db.episodes.insert_one({
+                "id": str(uuid.uuid4()),
+                "title_id": t["id"],
+                "number": 0,
+                "name": "تريلر رسمي",
+                "video_url": url,
+                "pages": [],
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+        logger.info("Seeded anime trailers")
 
 @app.on_event("shutdown")
 async def on_stop():
