@@ -30,7 +30,7 @@ export default function Layout() {
       try {
         const { data } = await api.get("/notifications/unread_count");
         setUnread(data.count);
-      } catch {}
+      } catch (e) { console.error("unread count failed", e); }
     };
     tick();
     const id = setInterval(tick, 8000);
@@ -43,7 +43,7 @@ export default function Layout() {
       setNotifs(data);
       await api.post("/notifications/read_all");
       setUnread(0);
-    } catch {}
+    } catch (e) { console.error("open notifs failed", e); }
   };
 
   return (

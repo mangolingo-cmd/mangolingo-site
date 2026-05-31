@@ -19,7 +19,7 @@ export default function ChatRoom({ roomId, title }) {
       const { data } = await api.get(`/rooms/${roomId}/messages`);
       setMessages(data);
     } catch (e) {
-      // silent
+      console.error("chat load failed", e);
     }
   };
 

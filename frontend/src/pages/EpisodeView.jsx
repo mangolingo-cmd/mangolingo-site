@@ -34,8 +34,8 @@ export default function EpisodeView() {
             setLoadingPages(false);
           }
         }
-      } catch {
-        // ignore
+      } catch (e) {
+        console.error("episode load failed", e);
       }
     })();
   }, [id, epId]);
@@ -83,7 +83,7 @@ export default function EpisodeView() {
           ) : pages.length === 0 ? (
             <p className="text-center text-muted-foreground py-12">لا توجد صفحات متاحة</p>
           ) : pages.map((p, i) => (
-            <img key={i} src={proxyImg(p)} alt={`Page ${i + 1}`} className="w-full rounded-lg border border-border" />
+            <img key={`${ep.id}-${i}`} src={proxyImg(p)} alt={`Page ${i + 1}`} className="w-full rounded-lg border border-border" />
           ))}
         </div>
       )}

@@ -12,6 +12,54 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Star, MessageSquare, Bookmark, PlayCircle, BookOpen } from "lucide-react";
 import ChatRoom from "@/components/ChatRoom";
 
+const TYPE_LABEL = { anime: "أنمي", manhwa: "مانهوا", manga: "مانجا" };
+
+function ChapterLanguageBadge({ ep, lang }) {
+  if (lang === "ar" && ep.language !== "ar") {
+    return <span className="bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded font-bold">EN (احتياطي)</span>;
+  }
+  if (ep.language === "ar") {
+    return <span className="bg-accent/20 text-accent px-1.5 py-0.5 rounded font-bold">عربي ✓</span>;
+  }
+  return null;
+}
+
+function ChaptersList({ episodes, isAnime, lang, id }) {
+  if (episodes.length === 0) return null;
+  const hasGap = episodes.length > 1 && episodes[episodes.length - 1].number - episodes[0].number > episodes.length + 5;
+  return (
+    <>
+      {hasGap && (
+        <div className="text-xs text-muted-foreground bg-secondary/40 border border-border rounded-md p-3 mb-4" data-testid="gaps-notice">
+          ℹ️ <strong>ملاحظة</strong>: قد تلاحظ فجوات في أرقام الفصول. هذا لأن فرق الترجمة المختلفة لم تُترجم كل الفصول.{lang === "ar" ? " الفصول التي لا تتوفر بالعربية تُعرض كاحتياطي بالإنجليزية." : ""}
+        </div>
+      )}
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {episodes.map((ep) => (
+          <Link
+            key={ep.id}
+            to={`/title/${id}/episode/${ep.id}`}
+            className="flex items-center gap-3 bg-[#0F111A] border border-border rounded-lg p-3 hover:border-primary/50 transition group"
+            data-testid={`episode-item-${ep.id}`}
+          >
+            <div className="w-12 h-12 rounded-md bg-primary/15 text-primary grid place-items-center font-display font-black shrink-0 group-hover:bg-primary group-hover:text-white transition">
+              {ep.number}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-bold truncate">{ep.name || (isAnime ? `الحلقة ${ep.number}` : `الفصل ${ep.number}`)}</div>
+              <div className="text-xs text-muted-foreground flex items-center gap-2">
+                <ChapterLanguageBadge ep={ep} lang={lang} />
+                <span>{isAnime ? "اضغط للمشاهدة" : "اضغط للقراءة"}</span>
+              </div>
+            </div>
+            {isAnime ? <PlayCircle className="w-5 h-5 text-muted-foreground" /> : <BookOpen className="w-5 h-5 text-muted-foreground" />}
+          </Link>
+        ))}
+      </div>
+    </>
+  );
+}
+
 const STATUS_LABEL = {
   watching: "أشاهد",
   completed: "أكملت",
@@ -102,7 +150,7 @@ export default function TitleDetail() {
         </div>
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <Badge className="bg-primary text-white border-0">{isAnime ? "أنمي" : t.type === "manhwa" ? "مانهوا" : "مانجا"}</Badge>
+            <Badge className="bg-primary text-white border-0">{TYPE_LABEL[t.type] || t.type}</Badge>
             {t.status && <Badge variant="outline" className="border-border text-muted-foreground">{t.status === "ongoing" ? "مستمر" : "مكتمل"}</Badge>}
             {t.year && <Badge variant="outline" className="border-border text-muted-foreground">{t.year}</Badge>}
           </div>
@@ -187,39 +235,7 @@ export default function TitleDetail() {
               </p>
             </div>
           ) : (
-            <>
-              {episodes.length > 1 && episodes[episodes.length - 1].number - episodes[0].number > episodes.length + 5 && (
-                <div className="text-xs text-muted-foreground bg-secondary/40 border border-border rounded-md p-3 mb-4" data-testid="gaps-notice">
-                  ℹ️ <strong>ملاحظة</strong>: قد تلاحظ فجوات في أرقام الفصول. هذا لأن فرق الترجمة المختلفة لم تُترجم كل الفصول.{lang === "ar" ? " الفصول التي لا تتوفر بالعربية تُعرض كاحتياطي بالإنجليزية." : ""}
-                </div>
-              )}
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {episodes.map((ep) => (
-                <Link
-                  key={ep.id}
-                  to={`/title/${id}/episode/${ep.id}`}
-                  className="flex items-center gap-3 bg-[#0F111A] border border-border rounded-lg p-3 hover:border-primary/50 transition group"
-                  data-testid={`episode-item-${ep.id}`}
-                >
-                  <div className="w-12 h-12 rounded-md bg-primary/15 text-primary grid place-items-center font-display font-black shrink-0 group-hover:bg-primary group-hover:text-white transition">
-                    {ep.number}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-bold truncate">{ep.name || (isAnime ? `الحلقة ${ep.number}` : `الفصل ${ep.number}`)}</div>
-                    <div className="text-xs text-muted-foreground flex items-center gap-2">
-                      {lang === "ar" && ep.language !== "ar" ? (
-                        <span className="bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded font-bold">EN (احتياطي)</span>
-                      ) : ep.language === "ar" ? (
-                        <span className="bg-accent/20 text-accent px-1.5 py-0.5 rounded font-bold">عربي ✓</span>
-                      ) : null}
-                      <span>{isAnime ? "اضغط للمشاهدة" : "اضغط للقراءة"}</span>
-                    </div>
-                  </div>
-                  {isAnime ? <PlayCircle className="w-5 h-5 text-muted-foreground" /> : <BookOpen className="w-5 h-5 text-muted-foreground" />}
-                </Link>
-              ))}
-            </div>
-            </>
+            <ChaptersList episodes={episodes} isAnime={isAnime} lang={lang} id={id} />
           )}
         </TabsContent>
 

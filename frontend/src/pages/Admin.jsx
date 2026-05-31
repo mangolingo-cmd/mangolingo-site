@@ -258,7 +258,7 @@ export default function Admin() {
                   data-testid={`admin-eps-toggle-${t.id}`}
                 >
                   {t.type === "anime" ? <PlayCircle className="w-4 h-4 me-1" /> : <BookOpen className="w-4 h-4 me-1" />}
-                  {expanded === t.id ? "إخفاء" : (t.type === "anime" ? "الحلقات" : "الفصول")}
+                  {expanded === t.id ? "إخفاء" : (t.type === "manhwa" ? "الفصول" : "الفصول")}
                 </Button>
                 <Button variant="ghost" size="icon" onClick={() => del(t.id)} data-testid={`admin-del-${t.id}`}>
                   <Trash2 className="w-4 h-4 text-destructive" />

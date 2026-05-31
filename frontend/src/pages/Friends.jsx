@@ -26,7 +26,7 @@ export default function Friends() {
       try {
         const { data } = await api.get("/users/search", { params: { q } });
         setResults(data);
-      } catch {}
+      } catch (e) { console.error("user search failed", e); }
     }, 300);
     return () => clearTimeout(id);
   }, [q]);
