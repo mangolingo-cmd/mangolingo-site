@@ -2,17 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Outlet, NavLink, Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import api from "@/api";
-import {
-  Home as HomeIcon,
-  MessageSquare,
-  Users,
-  User,
-  LogOut,
-  Bell,
-  Shield,
-  Send,
-  Sparkles,
-} from "lucide-react";
+import { User, Settings as SettingsIcon, LogOut, Bell, Shield, Send, Sparkles, Users, Home as HomeIcon, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -62,8 +52,8 @@ export default function Layout() {
       <header className="sticky top-0 z-40 glass-strong border-b border-border" data-testid="top-nav">
         <div className="max-w-7xl mx-auto flex items-center gap-6 px-4 sm:px-6 py-3">
           <Link to="/" className="flex items-center gap-2 font-display text-2xl" data-testid="nav-logo">
-            <span className="inline-block w-8 h-8 rounded-md bg-primary text-white grid place-items-center font-black">O</span>
-            <span className="gradient-text font-black tracking-normal">Otaku Hub</span>
+            <span className="inline-block w-8 h-8 rounded-md bg-primary text-white grid place-items-center font-black">M</span>
+            <span className="gradient-text font-black tracking-normal">MangaVerse</span>
           </Link>
           <nav className="hidden md:flex items-center gap-1 me-auto">
             {navItems.map((it) => (
@@ -149,6 +139,10 @@ export default function Layout() {
                 <DropdownMenuItem onClick={() => navigate("/profile")} data-testid="menu-profile">
                   <User className="w-4 h-4 me-2" />
                   ملفي الشخصي
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate("/settings")} data-testid="menu-settings">
+                  <SettingsIcon className="w-4 h-4 me-2" />
+                  الإعدادات
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => {

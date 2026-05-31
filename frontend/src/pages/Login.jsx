@@ -32,7 +32,7 @@ export default function Login() {
   return (
     <div className="min-h-screen hero-grad flex items-center justify-center p-6">
       <div className="w-full max-w-md">
-        <Link to="/" className="block text-center mb-6 font-display text-3xl gradient-text font-black">Otaku Hub</Link>
+        <Link to="/" className="block text-center mb-6 font-display text-3xl gradient-text font-black">MangaVerse</Link>
         <Card className="bg-[#0F111A]/90 border-border">
           <CardHeader>
             <CardTitle className="font-display text-3xl">أهلاً بعودتك</CardTitle>

@@ -52,13 +52,13 @@ export default function Home() {
         <div className="relative p-8 sm:p-14 max-w-2xl">
           <div className="inline-flex items-center gap-2 bg-primary/15 text-primary px-3 py-1 rounded-full text-sm font-bold mb-4">
             <Flame className="w-4 h-4" />
-            ساحة الأوتاكو العربية
+            ساحة المانجا والمانهوا العربية
           </div>
           <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl font-black leading-tight">
-            عش <span className="gradient-text">شغف الأنمي</span> مع مجتمعك
+            عش <span className="gradient-text">شغف المانجا</span> مع مجتمعك
           </h1>
           <p className="text-base sm:text-lg text-muted-foreground mt-4 max-w-xl">
-            تصفح آلاف عناوين الأنمي والمانهوا والمانجا، شارك في غرف النقاش، تواصل مع الأصدقاء، وتابع رحلتك.
+            تصفح آلاف عناوين المانجا والمانهوا، اقرأ بالعربية والإنجليزية، شارك في غرف النقاش، وتواصل مع الأصدقاء.
           </p>
         </div>
       </section>

@@ -14,6 +14,7 @@ import DMThread from "@/pages/DMThread";
 import Friends from "@/pages/Friends";
 import Profile from "@/pages/Profile";
 import Admin from "@/pages/Admin";
+import Settings from "@/pages/Settings";
 import EpisodeView from "@/pages/EpisodeView";
 
 function Protected({ children, adminOnly }) {

@@ -190,7 +190,7 @@ export default function TitleDetail() {
             <>
               {episodes.length > 1 && episodes[episodes.length - 1].number - episodes[0].number > episodes.length + 5 && (
                 <div className="text-xs text-muted-foreground bg-secondary/40 border border-border rounded-md p-3 mb-4" data-testid="gaps-notice">
-                  ℹ️ <strong>ملاحظة</strong>: قد تلاحظ فجوات في أرقام الفصول. هذا لأن فرق الترجمة المختلفة لم تُترجم كل الفصول. الفصول المُتوفرة بهذه اللغة فقط هي المعروضة هنا.
+                  ℹ️ <strong>ملاحظة</strong>: قد تلاحظ فجوات في أرقام الفصول. هذا لأن فرق الترجمة المختلفة لم تُترجم كل الفصول.{lang === "ar" ? " الفصول التي لا تتوفر بالعربية تُعرض كاحتياطي بالإنجليزية." : ""}
                 </div>
               )}
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -206,7 +206,14 @@ export default function TitleDetail() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-bold truncate">{ep.name || (isAnime ? `الحلقة ${ep.number}` : `الفصل ${ep.number}`)}</div>
-                    <div className="text-xs text-muted-foreground">{isAnime ? "اضغط للمشاهدة" : "اضغط للقراءة"}</div>
+                    <div className="text-xs text-muted-foreground flex items-center gap-2">
+                      {lang === "ar" && ep.language !== "ar" ? (
+                        <span className="bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded font-bold">EN (احتياطي)</span>
+                      ) : ep.language === "ar" ? (
+                        <span className="bg-accent/20 text-accent px-1.5 py-0.5 rounded font-bold">عربي ✓</span>
+                      ) : null}
+                      <span>{isAnime ? "اضغط للمشاهدة" : "اضغط للقراءة"}</span>
+                    </div>
                   </div>
                   {isAnime ? <PlayCircle className="w-5 h-5 text-muted-foreground" /> : <BookOpen className="w-5 h-5 text-muted-foreground" />}
                 </Link>
