@@ -515,31 +515,17 @@ async def list_episodes(tid: str, lang: str = "en"):
     title = await db.titles.find_one({"id": tid}, {"_id": 0})
     if not title:
         raise HTTPException(404, "العنوان غير موجود")
-    # Lazy-load both languages if never fetched and title has MangaDex link
-    if title.get("mangadex_id"):
-        if lang not in (title.get("langs_fetched") or []):
-            await _fetch_and_cache_mangadex_chapters(title, lang)
-        # When Arabic requested, also ensure English is fetched for fallback
-        if lang == "ar" and "en" not in (title.get("langs_fetched") or []):
-            await _fetch_and_cache_mangadex_chapters(title, "en")
-
+    # Lazy-load this language if never fetched
+    if title.get("mangadex_id") and lang not in (title.get("langs_fetched") or []):
+        await _fetch_and_cache_mangadex_chapters(title, lang)
+    # Return only chapters in the requested language (no cross-language mixing)
     if lang == "en":
-        # English: just return English (and legacy) chapters
+        # Legacy episodes without language field are treated as English
         query = {"title_id": tid, "$or": [{"language": "en"}, {"language": {"$exists": False}}]}
-        items = await db.episodes.find(query, {"_id": 0}).sort("number", 1).to_list(5000)
-        return items
-
-    # Arabic: merge Arabic + English-fallback so user sees complete chapter list
-    ar_items = await db.episodes.find({"title_id": tid, "language": "ar"}, {"_id": 0}).to_list(5000)
-    en_items = await db.episodes.find(
-        {"title_id": tid, "$or": [{"language": "en"}, {"language": {"$exists": False}}]},
-        {"_id": 0}
-    ).to_list(5000)
-    ar_numbers = {x["number"] for x in ar_items}
-    # Add English-only chapters as fallback (mark language so UI can show a badge)
-    merged = list(ar_items) + [x for x in en_items if x["number"] not in ar_numbers]
-    merged.sort(key=lambda x: x["number"])
-    return merged
+    else:
+        query = {"title_id": tid, "language": lang}
+    items = await db.episodes.find(query, {"_id": 0}).sort("number", 1).to_list(5000)
+    return items
 
 @api.get("/titles/{tid}/languages")
 async def list_languages(tid: str):

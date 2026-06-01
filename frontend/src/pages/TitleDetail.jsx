@@ -15,9 +15,6 @@ import ChatRoom from "@/components/ChatRoom";
 const TYPE_LABEL = { anime: "أنمي", manhwa: "مانهوا", manga: "مانجا" };
 
 function ChapterLanguageBadge({ ep, lang }) {
-  if (lang === "ar" && ep.language !== "ar") {
-    return <span className="bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded font-bold">EN (احتياطي)</span>;
-  }
   if (ep.language === "ar") {
     return <span className="bg-accent/20 text-accent px-1.5 py-0.5 rounded font-bold">عربي ✓</span>;
   }
@@ -31,7 +28,7 @@ function ChaptersList({ episodes, isAnime, lang, id }) {
     <>
       {hasGap && (
         <div className="text-xs text-muted-foreground bg-secondary/40 border border-border rounded-md p-3 mb-4" data-testid="gaps-notice">
-          ℹ️ <strong>ملاحظة</strong>: قد تلاحظ فجوات في أرقام الفصول. هذا لأن فرق الترجمة المختلفة لم تُترجم كل الفصول.{lang === "ar" ? " الفصول التي لا تتوفر بالعربية تُعرض كاحتياطي بالإنجليزية." : ""}
+          ℹ️ <strong>ملاحظة</strong>: قد تلاحظ فجوات في أرقام الفصول. هذا لأن فرق الترجمة المختلفة لم تُترجم كل الفصول.
         </div>
       )}
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
