@@ -178,7 +178,7 @@ async def update_me(data: ProfileUpdate, user: dict = Depends(get_current_user))
 
 # -------- Titles --------
 @api.get("/titles")
-async def list_titles(type: Optional[str] = None, q: Optional[str] = None, ar_only: bool = False, genre: Optional[str] = None, limit: int = 60):
+async def list_titles(type: Optional[str] = None, q: Optional[str] = None, ar_only: bool = False, genre: Optional[str] = None, page: int = 1, limit: int = 30):
     # Exclude titles known to have no available chapters
     query = {"has_chapters": {"$ne": False}}
     if type:
@@ -192,9 +192,18 @@ async def list_titles(type: Optional[str] = None, q: Optional[str] = None, ar_on
         query["has_ar"] = True
     if genre:
         query["genres"] = genre
-    # Sort: titles with Arabic first, then by created_at
-    items = await db.titles.find(query, {"_id": 0}).sort([("has_ar", -1), ("created_at", -1)]).to_list(limit)
-    return items
+    page = max(1, page)
+    limit = max(1, min(60, limit))
+    skip = (page - 1) * limit
+    total = await db.titles.count_documents(query)
+    items = await db.titles.find(query, {"_id": 0}).sort([("has_ar", -1), ("created_at", -1)]).skip(skip).limit(limit).to_list(limit)
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total + limit - 1) // limit,
+    }
 
 @api.get("/genres")
 async def list_genres():

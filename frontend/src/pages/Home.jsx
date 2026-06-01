@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Search, Flame, X } from "lucide-react";
 import { arGenre } from "@/lib/genres";
+import Pagination from "@/components/Pagination";
 
 const HERO = "https://images.unsplash.com/photo-1752338384552-1cda3350baba?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Nzh8MHwxfHNlYXJjaHw0fHx0b2t5byUyMG5pZ2h0JTIwYWxsZXl8ZW58MHx8fHwxNzc4NTA5MDMwfDA&ixlib=rb-4.1.0&q=85";
 
@@ -16,6 +17,9 @@ export default function Home() {
   const [arOnly, setArOnly] = useState(false);
   const [genre, setGenre] = useState("");
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
 
   // Load genres once
   useEffect(() => {
@@ -25,23 +29,28 @@ export default function Home() {
   const load = async () => {
     setLoading(true);
     try {
-      const params = {};
+      const params = { page, limit: 30 };
       if (type !== "all") params.type = type;
       if (q) params.q = q;
       if (arOnly) params.ar_only = true;
       if (genre) params.genre = genre;
       const { data } = await api.get("/titles", { params });
-      setTitles(data);
+      setTitles(data.items || []);
+      setTotalPages(data.total_pages || 1);
+      setTotal(data.total || 0);
     } finally {
       setLoading(false);
     }
   };
 
+  // Reset to page 1 when filters change
+  useEffect(() => { setPage(1); }, [q, type, arOnly, genre]);
+
   useEffect(() => {
     const id = setTimeout(load, 200);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, type, arOnly, genre]);
+  }, [q, type, arOnly, genre, page]);
 
   return (
     <div className="space-y-8" data-testid="home-page">
@@ -136,9 +145,17 @@ export default function Home() {
             لا توجد عناوين مطابقة.
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 sm:gap-6" data-testid="catalog-grid">
-            {titles.map((t) => <TitleCard key={t.id} title={t} />)}
-          </div>
+          <>
+            <div className="text-sm text-muted-foreground mb-3" data-testid="catalog-count">
+              {total.toLocaleString("ar-EG")} عنوان • صفحة {page} من {totalPages}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 sm:gap-6" data-testid="catalog-grid">
+              {titles.map((t) => <TitleCard key={t.id} title={t} />)}
+            </div>
+            {totalPages > 1 && (
+              <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+            )}
+          </>
         )}
       </section>
     </div>

@@ -102,8 +102,8 @@ export default function Admin() {
   const [expanded, setExpanded] = useState(null);
 
   const load = async () => {
-    const { data } = await api.get("/titles");
-    setTitles(data);
+    const { data } = await api.get("/titles", { params: { limit: 60 } });
+    setTitles(data.items || []);
   };
 
   useEffect(() => { load(); }, []);
