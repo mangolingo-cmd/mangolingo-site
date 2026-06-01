@@ -776,36 +776,40 @@ async def import_mangadex(ttype: str = "manga", total: int = 500, order: str = "
 
 @api.post("/admin/cleanup_empty")
 async def cleanup_empty(_: dict = Depends(require_admin)):
-    """Scan all MangaDex-linked titles concurrently, fetch their chapters, and mark
-    those with no English chapters as has_chapters=False so they disappear from catalog."""
+    """Scan all MangaDex-linked titles, fetch English chapters, hide titles
+    with no chapters or fewer than 5 EN/AR chapters (sparse coverage)."""
     import asyncio
     titles_to_check = await db.titles.find(
         {"mangadex_id": {"$exists": True}, "has_chapters": {"$ne": False}},
         {"_id": 0, "id": 1, "mangadex_id": 1, "title": 1},
-    ).to_list(5000)
+    ).to_list(10000)
 
     sem = asyncio.Semaphore(8)
     empty = []
+    sparse = []
     fetched = []
 
     async def check(t):
         async with sem:
             existing = await db.episodes.count_documents({"title_id": t["id"]})
-            if existing > 0:
-                await db.titles.update_one({"id": t["id"]}, {"$set": {"has_chapters": True}})
-                fetched.append(t["id"])
-                return
-            await _fetch_and_cache_mangadex_chapters(t, "en")
-            cnt = await db.episodes.count_documents({"title_id": t["id"]})
+            if existing == 0:
+                await _fetch_and_cache_mangadex_chapters(t, "en")
+            cnt = await db.episodes.count_documents({
+                "title_id": t["id"],
+                "$or": [{"language": "en"}, {"language": "ar"}, {"language": {"$exists": False}}],
+            })
             if cnt == 0:
                 await db.titles.update_one({"id": t["id"]}, {"$set": {"has_chapters": False}})
                 empty.append(t["id"])
+            elif cnt < 20:
+                await db.titles.update_one({"id": t["id"]}, {"$set": {"has_chapters": False, "sparse": True}})
+                sparse.append(t["id"])
             else:
                 await db.titles.update_one({"id": t["id"]}, {"$set": {"has_chapters": True}})
                 fetched.append(t["id"])
 
     await asyncio.gather(*[check(t) for t in titles_to_check])
-    return {"checked": len(titles_to_check), "with_chapters": len(fetched), "without_chapters": len(empty)}
+    return {"checked": len(titles_to_check), "with_chapters": len(fetched), "without_chapters": len(empty), "sparse_hidden": len(sparse)}
 
 @api.post("/admin/fetch_language")
 async def fetch_language(lang: str = "ar", _: dict = Depends(require_admin)):
