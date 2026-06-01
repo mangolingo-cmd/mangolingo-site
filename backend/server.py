@@ -481,11 +481,25 @@ async def list_dms(user: dict = Depends(get_current_user)):
     # find all dm rooms involving user
     rooms = await db.messages.distinct("room_id", {"room_id": {"$regex": "^dm_"}})
     mine = [r for r in rooms if user["id"] in r[3:].split("_")]
+    if not mine:
+        return []
+    # Batch-fetch all other users
+    other_ids = [next(p for p in r[3:].split("_") if p != user["id"]) for r in mine]
+    users = await db.users.find({"id": {"$in": other_ids}}, {"_id": 0}).to_list(len(other_ids))
+    user_map = {u["id"]: u for u in users}
+    # Batch-fetch last message per room
+    pipeline = [
+        {"$match": {"room_id": {"$in": mine}}},
+        {"$sort": {"created_at": -1}},
+        {"$group": {"_id": "$room_id", "last": {"$first": "$$ROOT"}}},
+    ]
+    msg_docs = await db.messages.aggregate(pipeline).to_list(len(mine))
+    msg_map = {m["_id"]: m["last"] for m in msg_docs}
     threads = []
     for r in mine:
-        other_id = [p for p in r[3:].split("_") if p != user["id"]][0]
-        other = await db.users.find_one({"id": other_id}, {"_id": 0})
-        last = await db.messages.find_one({"room_id": r}, {"_id": 0}, sort=[("created_at", -1)])
+        other_id = next(p for p in r[3:].split("_") if p != user["id"])
+        other = user_map.get(other_id)
+        last = msg_map.get(r)
         if other and last:
             threads.append({
                 "room_id": r,
