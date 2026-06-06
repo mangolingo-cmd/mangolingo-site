@@ -17,6 +17,7 @@ db = AsyncIOMotorClient(os.environ["MONGO_URL"])[os.environ["DB_NAME"]]
 
 # Curated list of popular slugs on manga-spark.net (manhwa/manhua)
 POPULAR_SLUGS = [
+    # First batch (15 — already imported)
     "villain-is-here",
     "chronicles-of-the-demon-faction",
     "mount-hua-sects-greatest-genius",
@@ -32,6 +33,37 @@ POPULAR_SLUGS = [
     "i-pretended-to-be-pregnant-but-my-husband-came-back",
     "i-got-a-job-at-a-spooky-manor",
     "on-a-perfect-revenge",
+    # Second batch — additional popular titles
+    "tougen-anki",
+    "one-punch-man",
+    "hajime-no-ippo",
+    "magic-emperor",
+    "tower-of-god-urek-mazino",
+    "solo-farming-in-the-tower",
+    "heavenly-demon-cultivation-simulation",
+    "reborn-as-the-heavenly-demon",
+    "the-supreme-martial-academy",
+    "the-sword-emperor-who-surpasses-his-previous-life",
+    "the-necromancer-of-a-swordsmanship-family",
+    "the-mad-dog-of-the-dukes-estate",
+    "grand-duke-of-the-north",
+    "miss-pendleton",
+    "can-i-cry-now",
+    "the-invisible-one",
+    "between-your-letter-and-my-reply",
+    "i-killed-an-academy-player",
+    "battle-mage-farmer",
+    "fog-land",
+    "memoir-of-the-legendary-scholar",
+    "regressed-genius-creates-mythic-items",
+    "golden-martial-god",
+    "national-level-dungeon-architect",
+    "the-glutton",
+    "limit-breaking-genius-mage",
+    "paranoid-mage",
+    "trauma-center",
+    "shadow-of-the-reborn-rogues-dominion",
+    "return-of-the-devourer",
 ]
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
