@@ -14,6 +14,22 @@ export function proxyImg(url) {
 
 const api = axios.create({ baseURL: API });
 
+// Convert backend-relative paths (e.g. /api/uploads/<id>) to absolute URLs for <img src>
+export function assetUrl(path) {
+  if (!path) return path;
+  if (path.startsWith("http://") || path.startsWith("https://") || path.startsWith("data:")) return path;
+  if (path.startsWith("/api/")) return `${process.env.REACT_APP_BACKEND_URL}${path}`;
+  return path;
+}
+
+// Upload a file (avatar / background) to the backend, returns full URL
+export async function uploadImage(file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  const { data } = await api.post("/uploads/image", fd, { headers: { "Content-Type": "multipart/form-data" } });
+  return { url: assetUrl(data.url), id: data.id };
+}
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) {

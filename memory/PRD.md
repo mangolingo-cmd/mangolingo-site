@@ -34,12 +34,12 @@
 - ✅ **Bilingual UI toggle** (Feb 2026): Arabic/English site language in Settings (`/api/auth/me` PATCH stores `locale`, document `dir` switches RTL/LTR reactively via Layout)
 - ✅ **Profile cover image** (Feb 2026): user-selectable background URL or preset, rendered as banner on `/profile`
 - ✅ **`/settings` route** (Feb 2026): registered in App.js (was missing)
+- ✅ **Image uploads via GridFS** (Feb 2026): `POST /api/uploads/image` accepts multipart files (PNG/JPEG/WebP/GIF, max 5MB), stores in MongoDB GridFS, served via `GET /api/uploads/{id}` with long-cache. Settings page exposes "Upload from device" buttons for avatar and profile background alongside URL paste.
 
 ## Backlog
 - P1: Emergent-managed Google OAuth (deferred per first-iteration scope)
 - P1: Translate remaining ~120 EN-only titles to Arabic (Emergent LLM budget pending)
 - P1: WebSocket-based realtime chat (currently 3s polling)
-- P2: Object Storage for avatar/cover image uploads (currently URL-only)
 - P2: Episode/chapter progress tracking per user
 - P2: Threaded review replies
 - P2: Push notifications (browser)

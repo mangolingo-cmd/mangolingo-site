@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { fmtError } from "@/api";
+import { fmtError, uploadImage } from "@/api";
 import { toast } from "sonner";
 import { t, dirFor } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { User as UserIcon, Image as ImageIcon, FileText, Save, Languages, Mountain } from "lucide-react";
+import { User as UserIcon, Image as ImageIcon, FileText, Save, Languages, Mountain, Upload, Loader2 } from "lucide-react";
 
 const PRESET_AVATARS = [
   "https://api.dicebear.com/7.x/adventurer/svg?seed=Misa",
@@ -34,22 +34,35 @@ export default function Settings() {
   const { user, updateProfile } = useAuth();
   const locale = user?.locale || "ar";
   const tr = (k, v) => t(locale, k, v);
-  const [name, setName] = useState("");
-  const [avatar, setAvatar] = useState("");
-  const [bio, setBio] = useState("");
-  const [background, setBackground] = useState("");
-  const [lang, setLang] = useState("ar");
+  const [name, setName] = useState(() => user?.name || "");
+  const [avatar, setAvatar] = useState(() => user?.avatar || "");
+  const [bio, setBio] = useState(() => user?.bio || "");
+  const [background, setBackground] = useState(() => user?.background || "");
+  const [lang, setLang] = useState(() => user?.locale || "ar");
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [uploadingBg, setUploadingBg] = useState(false);
+  const avatarFileRef = useRef(null);
+  const bgFileRef = useRef(null);
 
-  useEffect(() => {
-    if (user) {
-      setName(user.name || "");
-      setAvatar(user.avatar || "");
-      setBio(user.bio || "");
-      setBackground(user.background || "");
-      setLang(user.locale || "ar");
+  const onPickFile = async (file, kind) => {
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error(locale === "en" ? "Image too large (max 5MB)" : "حجم الصورة كبير جداً (الحد 5 ميغابايت)");
+      return;
     }
-  }, [user]);
+    const setLoading = kind === "avatar" ? setUploadingAvatar : setUploadingBg;
+    setLoading(true);
+    try {
+      const { url } = await uploadImage(file);
+      if (kind === "avatar") setAvatar(url); else setBackground(url);
+      toast.success(locale === "en" ? "Image uploaded" : "تم رفع الصورة");
+    } catch (e) {
+      toast.error(fmtError(e.response?.data?.detail));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const save = async () => {
     if (!name.trim()) return toast.error(tr("name_label"));
@@ -125,6 +138,11 @@ export default function Settings() {
             <div className="flex-1">
               <Label htmlFor="avatar-url">{tr("image_url")}</Label>
               <Input id="avatar-url" value={avatar} onChange={(e) => setAvatar(e.target.value)} placeholder="https://..." data-testid="settings-avatar-url" className="mt-1 bg-secondary" />
+              <input ref={avatarFileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={(e) => onPickFile(e.target.files?.[0], "avatar")} data-testid="settings-avatar-file" />
+              <Button type="button" variant="outline" size="sm" onClick={() => avatarFileRef.current?.click()} disabled={uploadingAvatar} className="mt-2" data-testid="upload-avatar-btn">
+                {uploadingAvatar ? <Loader2 className="w-4 h-4 me-1 animate-spin" /> : <Upload className="w-4 h-4 me-1" />}
+                {uploadingAvatar ? (locale === "en" ? "Uploading…" : "جارٍ الرفع…") : (locale === "en" ? "Upload from device" : "رفع من الجهاز")}
+              </Button>
             </div>
           </div>
           <div>
@@ -155,6 +173,11 @@ export default function Settings() {
             {background ? <img src={background} alt="" className="w-full h-full object-cover" /> : <div className="grid place-items-center h-full text-muted-foreground text-sm">لا توجد خلفية</div>}
           </div>
           <Input value={background} onChange={(e) => setBackground(e.target.value)} placeholder="https://..." data-testid="settings-background-url" className="bg-secondary" />
+          <input ref={bgFileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={(e) => onPickFile(e.target.files?.[0], "background")} data-testid="settings-bg-file" />
+          <Button type="button" variant="outline" size="sm" onClick={() => bgFileRef.current?.click()} disabled={uploadingBg} data-testid="upload-bg-btn">
+            {uploadingBg ? <Loader2 className="w-4 h-4 me-1 animate-spin" /> : <Upload className="w-4 h-4 me-1" />}
+            {uploadingBg ? (locale === "en" ? "Uploading…" : "جارٍ الرفع…") : (locale === "en" ? "Upload from device" : "رفع من الجهاز")}
+          </Button>
           <div>
             <Label className="text-sm">{tr("or_pick_preset")}</Label>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-2">

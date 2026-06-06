@@ -13,9 +13,11 @@ from typing import List, Optional
 import bcrypt
 import jwt
 import httpx
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request
+from bson import ObjectId
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
+from fastapi.responses import StreamingResponse
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from pydantic import BaseModel, EmailStr, Field
 
 # -------- Config --------
@@ -28,6 +30,7 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Admin@12345")
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
+fs_bucket = AsyncIOMotorGridFSBucket(db, bucket_name="uploads")
 
 app = FastAPI(title="Otaku Hub API")
 api = APIRouter(prefix="/api")
@@ -874,6 +877,51 @@ async def proxy_image(url: str):
             )
     except httpx.HTTPError as e:
         raise HTTPException(502, f"تعذر جلب الصورة: {e}")
+
+# -------- Image uploads (GridFS) --------
+ALLOWED_IMAGE_MIME = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
+
+@api.post("/uploads/image")
+async def upload_image(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+    """Upload a user image (avatar / profile background) to MongoDB GridFS.
+    Returns a public URL that can be stored in user.avatar / user.background."""
+    if file.content_type not in ALLOWED_IMAGE_MIME:
+        raise HTTPException(400, "نوع الملف غير مدعوم. استخدم PNG, JPEG, WebP أو GIF.")
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "حجم الصورة يتجاوز 5 ميغابايت.")
+    if not data:
+        raise HTTPException(400, "ملف فارغ.")
+    object_id = await fs_bucket.upload_from_stream(
+        file.filename or "upload",
+        data,
+        metadata={
+            "content_type": file.content_type,
+            "owner_id": user["id"],
+            "uploaded_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    return {"url": f"/api/uploads/{object_id}", "id": str(object_id), "size": len(data)}
+
+@api.get("/uploads/{file_id}")
+async def get_upload(file_id: str):
+    try:
+        oid = ObjectId(file_id)
+    except Exception:
+        raise HTTPException(404, "غير موجود")
+    try:
+        stream = await fs_bucket.open_download_stream(oid)
+    except Exception:
+        raise HTTPException(404, "الصورة غير موجودة")
+    ct = (stream.metadata or {}).get("content_type", "application/octet-stream")
+    async def gen():
+        while True:
+            chunk = await stream.readchunk()
+            if not chunk:
+                break
+            yield chunk
+    return StreamingResponse(gen(), media_type=ct, headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 # -------- Startup --------
 app.include_router(api)
