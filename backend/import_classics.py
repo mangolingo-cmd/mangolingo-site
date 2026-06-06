@@ -1,5 +1,7 @@
 """Import classic/old popular manhwa by direct name search."""
-import asyncio, os, uuid
+import asyncio
+import os
+import uuid
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 load_dotenv("/app/backend/.env")
@@ -102,7 +104,7 @@ async def main():
                 doc["genres"] = [g for g in doc["genres"] if g]
                 await db.titles.insert_one(doc)
                 added += 1
-            except Exception as e:
+            except Exception:
                 not_found += 1
     print(f"Added: {added}, Skipped (already exists): {skipped}, Not found: {not_found}")
 

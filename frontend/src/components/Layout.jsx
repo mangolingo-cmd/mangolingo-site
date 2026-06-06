@@ -11,11 +11,11 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 
-const navItems = [
-  { to: "/", label: "الرئيسية", icon: HomeIcon, testid: "nav-home" },
-  { to: "/lobby", label: "الردهة العامة", icon: Sparkles, testid: "nav-lobby" },
-  { to: "/messages", label: "الرسائل", icon: Send, testid: "nav-messages" },
-  { to: "/friends", label: "الأصدقاء", icon: Users, testid: "nav-friends" },
+const NAV_BUILD = (locale) => [
+  { to: "/", label: tr(locale, "home"), icon: HomeIcon, testid: "nav-home" },
+  { to: "/lobby", label: tr(locale, "lobby"), icon: Sparkles, testid: "nav-lobby" },
+  { to: "/messages", label: tr(locale, "messages"), icon: Send, testid: "nav-messages" },
+  { to: "/friends", label: tr(locale, "friends"), icon: Users, testid: "nav-friends" },
 ];
 
 export default function Layout() {
@@ -23,6 +23,14 @@ export default function Layout() {
   const navigate = useNavigate();
   const [unread, setUnread] = useState(0);
   const [notifs, setNotifs] = useState([]);
+  const locale = user?.locale || "ar";
+  const navItems = NAV_BUILD(locale);
+
+  // Apply document dir/lang reactively
+  useEffect(() => {
+    document.documentElement.dir = dirFor(locale);
+    document.documentElement.lang = locale;
+  }, [locale]);
 
   useEffect(() => {
     if (!user) return;
@@ -83,7 +91,7 @@ export default function Layout() {
                 }
               >
                 <Shield className="w-4 h-4" />
-                لوحة الإدارة
+                {tr(locale, "admin")}
               </NavLink>
             )}
           </nav>
@@ -101,10 +109,10 @@ export default function Layout() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-80 max-h-96 overflow-y-auto" dir="rtl">
-                <DropdownMenuLabel>الإشعارات</DropdownMenuLabel>
+                <DropdownMenuLabel>{tr(locale, "notifications")}</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 {notifs.length === 0 && (
-                  <div className="px-3 py-6 text-center text-muted-foreground text-sm">لا توجد إشعارات</div>
+                  <div className="px-3 py-6 text-center text-muted-foreground text-sm">{tr(locale, "no_notifications")}</div>
                 )}
                 {notifs.map((n) => (
                   <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-1 py-2">
@@ -138,11 +146,11 @@ export default function Layout() {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => navigate("/profile")} data-testid="menu-profile">
                   <User className="w-4 h-4 me-2" />
-                  ملفي الشخصي
+                  {tr(locale, "profile")}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigate("/settings")} data-testid="menu-settings">
                   <SettingsIcon className="w-4 h-4 me-2" />
-                  الإعدادات
+                  {tr(locale, "settings")}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => {
@@ -152,7 +160,7 @@ export default function Layout() {
                   data-testid="menu-logout"
                 >
                   <LogOut className="w-4 h-4 me-2" />
-                  تسجيل الخروج
+                  {tr(locale, "logout")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -182,6 +190,11 @@ export default function Layout() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         <Outlet />
+      </main>
+    </div>
+  );
+}
+     <Outlet />
       </main>
     </div>
   );

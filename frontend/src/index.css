@@ -41,7 +41,6 @@ body {
     color: hsl(var(--foreground));
     font-family: "Cairo", "Tajawal", system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
-    direction: rtl;
 }
 
 h1, h2, h3, h4, h5 {

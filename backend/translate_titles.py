@@ -149,7 +149,8 @@ async def translate_titles():
         )
         try:
             resp = await chat.send_message(UserMessage(text=prompt))
-            import json, re
+            import json
+            import re
             txt = resp.strip()
             m = re.search(r"\[.*\]", txt, re.DOTALL)
             if not m:

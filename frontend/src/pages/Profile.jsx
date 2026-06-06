@@ -55,15 +55,20 @@ export default function Profile() {
 
   return (
     <div className="space-y-8" data-testid="profile-page">
-      <div className="bg-[#0F111A] border border-border rounded-2xl p-6 flex flex-col md:flex-row gap-6 items-start">
-        <Avatar className="w-28 h-28 ring-2 ring-primary/40">
-          <AvatarImage src={target.avatar} />
-          <AvatarFallback className="bg-primary text-white text-3xl">{target.name?.[0]}</AvatarFallback>
-        </Avatar>
-        <div className="flex-1 space-y-2">
-          <h1 className="font-display text-3xl font-black">{target.name}</h1>
-          <p className="text-muted-foreground">{target.bio || "لا توجد نبذة بعد"}</p>
-          {target.role === "admin" && <Badge className="bg-accent text-black">مدير</Badge>}
+      <div className="bg-[#0F111A] border border-border rounded-2xl overflow-hidden">
+        {target.background && (
+          <div className="aspect-[4/1] w-full bg-cover bg-center" style={{ backgroundImage: `url(${target.background})` }} data-testid="profile-background" />
+        )}
+        <div className="p-6 flex flex-col md:flex-row gap-6 items-start">
+          <Avatar className="w-28 h-28 ring-2 ring-primary/40 -mt-16 md:-mt-20 bg-[#0F111A]">
+            <AvatarImage src={target.avatar} />
+            <AvatarFallback className="bg-primary text-white text-3xl">{target.name?.[0]}</AvatarFallback>
+          </Avatar>
+          <div className="flex-1 space-y-2">
+            <h1 className="font-display text-3xl font-black">{target.name}</h1>
+            <p className="text-muted-foreground">{target.bio || "لا توجد نبذة بعد"}</p>
+            {target.role === "admin" && <Badge className="bg-accent text-black">مدير</Badge>}
+          </div>
         </div>
       </div>
 

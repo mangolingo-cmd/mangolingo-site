@@ -78,6 +78,8 @@ class ProfileUpdate(BaseModel):
     name: Optional[str] = None
     bio: Optional[str] = None
     avatar: Optional[str] = None
+    background: Optional[str] = None
+    locale: Optional[str] = None
 
 # -------- Helpers --------
 def hash_pw(p: str) -> str:
@@ -104,6 +106,8 @@ def public_user(u: dict) -> dict:
         "name": u["name"],
         "avatar": u.get("avatar") or "",
         "bio": u.get("bio") or "",
+        "background": u.get("background") or "",
+        "locale": u.get("locale") or "ar",
         "role": u.get("role", "user"),
     }
 
@@ -566,7 +570,7 @@ async def list_languages(tid: str):
     legacy = await db.episodes.count_documents({"title_id": tid, "language": {"$exists": False}})
     if legacy and "en" not in langs:
         langs.append("en")
-    return {"languages": [l for l in langs if l]}
+    return {"languages": [lang for lang in langs if lang]}
 
 @api.get("/episodes/{eid}/pages")
 async def get_episode_pages(eid: str, user: dict = Depends(get_current_user)):
@@ -585,7 +589,7 @@ async def get_episode_pages(eid: str, user: dict = Depends(get_current_user)):
                 ch = d["chapter"]
                 pages = [f"{base}/data/{ch['hash']}/{f}" for f in ch.get("data", [])]
                 return {"pages": pages}
-        except Exception as e:
+        except Exception:
             logger.exception("MangaDex pages fetch failed")
             raise HTTPException(502, "تعذر جلب الصفحات من المصدر")
     return {"pages": ep.get("pages", [])}
@@ -870,10 +874,6 @@ async def proxy_image(url: str):
             )
     except httpx.HTTPError as e:
         raise HTTPException(502, f"تعذر جلب الصورة: {e}")
-
-@api.get("/")
-async def root():
-    return {"ok": True, "name": "Otaku Hub"}
 
 # -------- Startup --------
 app.include_router(api)
