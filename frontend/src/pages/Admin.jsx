@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, Plus, FilmIcon, BookOpen, PlayCircle } from "lucide-react";
+import { Trash2, Plus, FilmIcon, BookOpen, PlayCircle, RefreshCw, Clock } from "lucide-react";
 
 const EMPTY = {
   type: "anime",
@@ -35,7 +35,9 @@ function EpisodesManager({ title }) {
     setEps(data);
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [title.id]);
+  useEffect(() => {
+    api.get(`/titles/${title.id}/episodes`).then(({ data }) => setEps(data)).catch(() => {});
+  }, [title.id]);
 
   const add = async () => {
     if (!number) return toast.error("الرقم مطلوب");
@@ -100,13 +102,38 @@ export default function Admin() {
   const [titles, setTitles] = useState([]);
   const [form, setForm] = useState(EMPTY);
   const [expanded, setExpanded] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshLog, setRefreshLog] = useState([]);
 
   const load = async () => {
     const { data } = await api.get("/titles", { params: { limit: 60 } });
     setTitles(data.items || []);
   };
 
-  useEffect(() => { load(); }, []);
+  const loadRefreshLog = async () => {
+    try {
+      const { data } = await api.get("/admin/refresh-log");
+      setRefreshLog(data);
+    } catch (e) { /* ignore */ }
+  };
+
+  useEffect(() => {
+    api.get("/titles", { params: { limit: 60 } }).then(({ data }) => setTitles(data.items || [])).catch(() => {});
+    api.get("/admin/refresh-log").then(({ data }) => setRefreshLog(data)).catch(() => {});
+  }, []);
+
+  const triggerRefresh = async () => {
+    setRefreshing(true);
+    toast.info("جارٍ فحص جميع عناوين manga-spark للفصول الجديدة...");
+    try {
+      const { data } = await api.post("/admin/refresh-mangaspark", null, { timeout: 600000 });
+      toast.success(`اكتمل: فُحص ${data.titles_scanned} عنواناً، أُضيف ${data.new_chapters} فصلاً جديداً`);
+      await loadRefreshLog();
+    } catch (e) {
+      toast.error(fmtError(e.response?.data?.detail));
+    }
+    setRefreshing(false);
+  };
 
   const save = async () => {
     if (!form.title.trim()) return toast.error("العنوان مطلوب");
@@ -194,6 +221,37 @@ export default function Admin() {
             تنظيف العناوين بدون فصول
           </Button>
         </div>
+      </section>
+
+      <section className="bg-[#0F111A] border border-border rounded-xl p-6 space-y-3" data-testid="mangaspark-refresh">
+        <h2 className="font-display text-xl font-black flex items-center gap-2">
+          <RefreshCw className="w-5 h-5 text-accent" /> تحديث فصول manga-spark
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          المهمة الدورية تشتغل تلقائياً <strong>كل 6 ساعات</strong> في الخلفية لجلب الفصول الجديدة. يمكنك تشغيلها يدوياً الآن:
+        </p>
+        <Button onClick={triggerRefresh} disabled={refreshing} className="bg-accent hover:bg-accent/90" data-testid="refresh-mangaspark-btn">
+          <RefreshCw className={`w-4 h-4 me-1 ${refreshing ? "animate-spin" : ""}`} />
+          {refreshing ? "جارٍ التحديث..." : "تحديث الآن"}
+        </Button>
+        {refreshLog.length > 0 && (
+          <div className="space-y-1.5 mt-3" data-testid="refresh-log">
+            <p className="text-xs font-bold text-muted-foreground flex items-center gap-1">
+              <Clock className="w-3 h-3" /> آخر عمليات التحديث:
+            </p>
+            {refreshLog.slice(0, 5).map((log, i) => (
+              <div key={i} className="text-xs bg-secondary/40 rounded px-2 py-1.5 border border-border flex items-center gap-2 flex-wrap">
+                <Badge variant={log.kind === "mangaspark_refresh_manual" ? "default" : "secondary"} className="text-[10px]">
+                  {log.kind === "mangaspark_refresh_manual" ? "يدوي" : "تلقائي"}
+                </Badge>
+                <span className="text-muted-foreground">{new Date(log.at).toLocaleString("ar-EG")}</span>
+                <span className="text-foreground">
+                  فُحص {log.titles_scanned} | جديد {log.new_chapters} فصلاً
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="bg-[#0F111A] border border-border rounded-xl p-6 space-y-4">

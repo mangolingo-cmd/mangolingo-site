@@ -39,6 +39,16 @@
 
 ## Backlog
 - P1: Emergent-managed Google OAuth (deferred per first-iteration scope)
+- P1: WebSocket-based realtime chat (currently 3s polling)
+- P2: Episode/chapter progress tracking per user
+- P2: Threaded review replies
+- P2: Push notifications (browser)
+- P2: Search across reviews and discussions
+- P2: Extend i18n dictionary to cover Lobby, DM, Friends, Admin, TitleDetail full strings
+h-log`.
+
+## Backlog
+- P1: Emergent-managed Google OAuth (deferred per first-iteration scope)
 - P1: Auto-update / nightly cron to fetch new chapters for scraped titles
 - P1: WebSocket-based realtime chat (currently 3s polling)
 - P2: Episode/chapter progress tracking per user

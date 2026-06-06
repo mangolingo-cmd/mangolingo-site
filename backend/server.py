@@ -6,6 +6,7 @@ load_dotenv(ROOT_DIR / ".env")
 
 import os
 import uuid
+import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
@@ -931,6 +932,26 @@ async def get_upload(file_id: str):
     return StreamingResponse(gen(), media_type=ct, headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 # -------- Startup --------
+@api.post("/admin/refresh-mangaspark")
+async def admin_refresh_mangaspark(_: dict = Depends(require_admin)):
+    """Manually trigger an immediate manga-spark chapter refresh."""
+    from scrape_mangaspark import refresh_all_chapters
+    stats = await refresh_all_chapters()
+    await db.system_logs.insert_one({
+        "kind": "mangaspark_refresh_manual",
+        "at": datetime.now(timezone.utc).isoformat(),
+        **stats,
+    })
+    return stats
+
+@api.get("/admin/refresh-log")
+async def admin_refresh_log(_: dict = Depends(require_admin)):
+    """Last 20 refresh runs (auto + manual)."""
+    logs = await db.system_logs.find({"kind": {"$in": ["mangaspark_refresh", "mangaspark_refresh_manual"]}}).sort("at", -1).limit(20).to_list(None)
+    for log in logs:
+        log.pop("_id", None)
+    return logs
+
 app.include_router(api)
 
 app.add_middleware(
@@ -1076,6 +1097,28 @@ async def on_start():
                 "created_at": datetime.now(timezone.utc).isoformat(),
             })
         logger.info("Seeded anime trailers")
+
+    # Background scheduler: refresh manga-spark chapters every 6 hours
+    async def _mangaspark_refresh_loop():
+        from scrape_mangaspark import refresh_all_chapters
+        # initial delay so app finishes startup quickly
+        await asyncio.sleep(60)
+        while True:
+            try:
+                stats = await refresh_all_chapters()
+                logger.info(f"[mangaspark refresh] scanned={stats['titles_scanned']} new_chapters={stats['new_chapters']}")
+                await db.system_logs.insert_one({
+                    "kind": "mangaspark_refresh",
+                    "at": datetime.now(timezone.utc).isoformat(),
+                    **stats,
+                })
+            except Exception as e:
+                logger.exception(f"mangaspark refresh failed: {e}")
+            # 6 hours
+            await asyncio.sleep(6 * 60 * 60)
+
+    asyncio.create_task(_mangaspark_refresh_loop())
+    logger.info("Background mangaspark refresh scheduler started (every 6h)")
 
 @app.on_event("shutdown")
 async def on_stop():

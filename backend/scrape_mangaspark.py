@@ -200,6 +200,58 @@ async def import_series(client: httpx.AsyncClient, slug: str, max_chapters: int 
     return {"chapters": ep_inserted, "title": info["title"]}
 
 
+async def refresh_all_chapters(max_titles: int | None = None, per_title_delay: float = 0.3) -> dict:
+    """For every imported manga-spark title, fetch latest chapter list and import any new chapters.
+    Returns stats {titles_scanned, new_chapters}."""
+    new_chapters = 0
+    scanned = 0
+    cursor = db.titles.find({"source": SOURCE}, {"id": 1, "source_slug": 1})
+    titles = await cursor.to_list(None)
+    if max_titles:
+        titles = titles[:max_titles]
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        for t in titles:
+            slug = t["source_slug"]
+            tid = t["id"]
+            scanned += 1
+            # Re-fetch series page to get manga_id (could be cached, but cheap enough)
+            try:
+                r = await client.get(f"https://manga-spark.net/manga/{slug}/", headers=HEADERS)
+                r.raise_for_status()
+                info = parse_series_html(r.text, slug)
+                if not info:
+                    continue
+                chapters = await fetch_chapters(client, slug, info["manga_id"])
+                if not chapters:
+                    continue
+                # Find chapter numbers already stored
+                existing = await db.episodes.find({"title_id": tid, "source": SOURCE}, {"number": 1}).to_list(None)
+                have = {int(e["number"]) for e in existing}
+                missing = [c for c in chapters if c["number"] not in have]
+                for ch in missing:
+                    pages = await fetch_chapter_pages(client, ch["url"])
+                    if not pages:
+                        continue
+                    await db.episodes.insert_one({
+                        "id": str(uuid.uuid4()),
+                        "title_id": tid,
+                        "number": ch["number"],
+                        "name": f"الفصل {ch['number']}",
+                        "language": "ar",
+                        "pages": pages,
+                        "source": SOURCE,
+                        "source_url": ch["url"],
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                    })
+                    new_chapters += 1
+                    await asyncio.sleep(per_title_delay)
+            except Exception as e:
+                print(f"[refresh] {slug} failed: {e}")
+                continue
+            await asyncio.sleep(per_title_delay)
+    return {"titles_scanned": scanned, "new_chapters": new_chapters}
+
+
 async def main():
     async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
         total_titles = 0
