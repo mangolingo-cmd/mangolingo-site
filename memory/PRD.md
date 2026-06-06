@@ -29,13 +29,19 @@
 - ✅ Seed admin (admin@otaku.com / Admin@12345) + 6 sample titles + 72 episodes/chapters
 - ✅ RTL Arabic UI with Kufam display font + Cairo body font
 - ✅ data-testid on all interactive elements
+- ✅ **MangaDex API integration** (Feb 2026): auto-import 1,200+ titles, backend image proxy, language-separated chapters (AR/EN)
+- ✅ **Catalog pagination** (Feb 2026): 30 items/page, page selector, total count display
+- ✅ **Bilingual UI toggle** (Feb 2026): Arabic/English site language in Settings (`/api/auth/me` PATCH stores `locale`, document `dir` switches RTL/LTR reactively via Layout)
+- ✅ **Profile cover image** (Feb 2026): user-selectable background URL or preset, rendered as banner on `/profile`
+- ✅ **`/settings` route** (Feb 2026): registered in App.js (was missing)
 
 ## Backlog
-- P0: None — MVP complete
 - P1: Emergent-managed Google OAuth (deferred per first-iteration scope)
+- P1: Translate remaining ~120 EN-only titles to Arabic (Emergent LLM budget pending)
 - P1: WebSocket-based realtime chat (currently 3s polling)
+- P2: Object Storage for avatar/cover image uploads (currently URL-only)
 - P2: Episode/chapter progress tracking per user
 - P2: Threaded review replies
-- P2: Image uploads for avatars (currently URL-only)
 - P2: Push notifications (browser)
 - P2: Search across reviews and discussions
+- P2: Extend i18n dictionary to cover Lobby, DM, Friends, Admin, TitleDetail full strings

@@ -43,6 +43,7 @@ function App() {
             <Route path="/friends" element={<Friends />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/profile/:id" element={<Profile />} />
+            <Route path="/settings" element={<Settings />} />
             <Route path="/admin" element={<Protected adminOnly><Admin /></Protected>} />
           </Route>
         </Routes>

@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import { Outlet, NavLink, Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import api from "@/api";
-import { User, Settings as SettingsIcon, LogOut, Bell, Shield, Send, Sparkles, Users, Home as HomeIcon, MessageSquare } from "lucide-react";
+import { t as tr, dirFor } from "@/lib/i18n";
+import { User, Settings as SettingsIcon, LogOut, Bell, Shield, Send, Sparkles, Users, Home as HomeIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -11,7 +12,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 
-const NAV_BUILD = (locale) => [
+const buildNav = (locale) => [
   { to: "/", label: tr(locale, "home"), icon: HomeIcon, testid: "nav-home" },
   { to: "/lobby", label: tr(locale, "lobby"), icon: Sparkles, testid: "nav-lobby" },
   { to: "/messages", label: tr(locale, "messages"), icon: Send, testid: "nav-messages" },
@@ -24,7 +25,7 @@ export default function Layout() {
   const [unread, setUnread] = useState(0);
   const [notifs, setNotifs] = useState([]);
   const locale = user?.locale || "ar";
-  const navItems = NAV_BUILD(locale);
+  const navItems = buildNav(locale);
 
   // Apply document dir/lang reactively
   useEffect(() => {
@@ -52,6 +53,14 @@ export default function Layout() {
       await api.post("/notifications/read_all");
       setUnread(0);
     } catch (e) { console.error("open notifs failed", e); }
+  };
+
+  const notifText = (n) => {
+    const from = n.payload?.from_name || "";
+    if (n.type === "friend_request") return locale === "en" ? `Friend request from ${from}` : `طلب صداقة من ${from}`;
+    if (n.type === "friend_accepted") return locale === "en" ? `${from} accepted your friend request` : `${from} قبل طلب الصداقة`;
+    if (n.type === "dm") return locale === "en" ? `Message from ${from}` : `رسالة من ${from}`;
+    return "";
   };
 
   return (
@@ -108,7 +117,7 @@ export default function Layout() {
                   )}
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-80 max-h-96 overflow-y-auto" dir="rtl">
+              <DropdownMenuContent align="end" className="w-80 max-h-96 overflow-y-auto" dir={dirFor(locale)}>
                 <DropdownMenuLabel>{tr(locale, "notifications")}</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 {notifs.length === 0 && (
@@ -116,11 +125,7 @@ export default function Layout() {
                 )}
                 {notifs.map((n) => (
                   <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-1 py-2">
-                    <div className="text-sm font-semibold">
-                      {n.type === "friend_request" && `طلب صداقة من ${n.payload?.from_name}`}
-                      {n.type === "friend_accepted" && `${n.payload?.from_name} قبل طلب الصداقة`}
-                      {n.type === "dm" && `رسالة من ${n.payload?.from_name}`}
-                    </div>
+                    <div className="text-sm font-semibold">{notifText(n)}</div>
                     {n.payload?.preview && (
                       <div className="text-xs text-muted-foreground truncate w-full">{n.payload.preview}</div>
                     )}
@@ -141,7 +146,7 @@ export default function Layout() {
                   <span className="hidden sm:block text-sm font-semibold">{user?.name}</span>
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" dir="rtl">
+              <DropdownMenuContent align="end" dir={dirFor(locale)}>
                 <DropdownMenuLabel>{user?.email}</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => navigate("/profile")} data-testid="menu-profile">
@@ -190,11 +195,6 @@ export default function Layout() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         <Outlet />
-      </main>
-    </div>
-  );
-}
-     <Outlet />
       </main>
     </div>
   );
