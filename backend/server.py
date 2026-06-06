@@ -859,16 +859,23 @@ async def fetch_language(lang: str = "ar", _: dict = Depends(require_admin)):
 
 @api.get("/proxy/image")
 async def proxy_image(url: str):
-    """Proxy MangaDex/MangaDex-CDN images through our backend to bypass
+    """Proxy MangaDex/MangaSpark images through our backend to bypass
     referrer/rate-limit issues when loaded directly from the browser."""
     from fastapi.responses import Response
-    allowed = ("mangadex.network", "mangadex.org")
+    allowed = ("mangadex.network", "mangadex.org", "sparkio.manga-spark.net", "s3sparkio.manga-spark.com", "manga-spark.net")
     if not any(host in url for host in allowed):
         raise HTTPException(400, "URL غير مسموح")
+    # manga-spark CDN requires browser UA + referer (Cloudflare protected)
+    headers = {}
+    if "manga-spark" in url:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0 Safari/537.36",
+            "Referer": "https://manga-spark.net/",
+            "Accept": "image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5",
+        }
     try:
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as h:
-            # MangaDex serves the image fine to Python-default UA, but 403s fake browsers.
-            r = await h.get(url)
+            r = await h.get(url, headers=headers)
             r.raise_for_status()
             return Response(
                 content=r.content,

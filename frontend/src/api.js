@@ -2,11 +2,15 @@ import axios from "axios";
 
 export const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
-// Wrap MangaDex image URLs through our backend proxy so the browser
+// Wrap MangaDex / MangaSpark image URLs through our backend proxy so the browser
 // doesn't get blocked by referer/rate-limit on direct CDN requests.
 export function proxyImg(url) {
   if (!url) return url;
-  if (url.includes("mangadex.network") || url.includes("mangadex.org")) {
+  if (
+    url.includes("mangadex.network") ||
+    url.includes("mangadex.org") ||
+    url.includes("manga-spark")
+  ) {
     return `${API}/proxy/image?url=${encodeURIComponent(url)}`;
   }
   return url;
