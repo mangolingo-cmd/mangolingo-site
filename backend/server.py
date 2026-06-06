@@ -275,12 +275,17 @@ async def add_review(tid: str, data: ReviewIn, user: dict = Depends(get_current_
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.reviews.insert_one(doc)
-    # update average
-    cursor = db.reviews.find({"title_id": tid}, {"_id": 0, "rating": 1})
-    ratings = [r["rating"] async for r in cursor]
-    if ratings:
-        avg = sum(ratings) / len(ratings)
-        await db.titles.update_one({"id": tid}, {"$set": {"rating_avg": round(avg, 1), "rating_count": len(ratings)}})
+    # update average using aggregation (avoids unbounded fetch)
+    pipeline = [
+        {"$match": {"title_id": tid}},
+        {"$group": {"_id": None, "avg": {"$avg": "$rating"}, "count": {"$sum": 1}}},
+    ]
+    result = await db.reviews.aggregate(pipeline).to_list(1)
+    if result:
+        await db.titles.update_one(
+            {"id": tid},
+            {"$set": {"rating_avg": round(result[0]["avg"], 1), "rating_count": result[0]["count"]}},
+        )
     doc.pop("_id", None)
     return doc
 
