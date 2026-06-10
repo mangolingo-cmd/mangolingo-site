@@ -863,7 +863,7 @@ async def proxy_image(url: str):
     """Proxy MangaDex/MangaSpark images through our backend to bypass
     referrer/rate-limit issues when loaded directly from the browser."""
     from fastapi.responses import Response
-    allowed = ("mangadex.network", "mangadex.org", "sparkio.manga-spark.net", "s3sparkio.manga-spark.com", "manga-spark.net")
+    allowed = ("mangadex.network", "mangadex.org", "manga-spark.net", "manga-spark.com")
     if not any(host in url for host in allowed):
         raise HTTPException(400, "URL غير مسموح")
     # manga-spark CDN requires browser UA + referer (Cloudflare protected)

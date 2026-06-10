@@ -194,6 +194,13 @@ export default function Layout() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+        <ins
+  className="adsbygoogle"
+  style={{ display: "block" }}
+  data-ad-format="autorelaxed"
+  data-ad-client="ca-pub-5406621661801119"
+  data-ad-slot="4297437849"
+></ins>
         <Outlet />
       </main>
     </div>

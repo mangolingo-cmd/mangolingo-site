@@ -35,6 +35,7 @@
 - ✅ **Profile cover image** (Feb 2026): user-selectable background URL or preset, rendered as banner on `/profile`
 - ✅ **`/settings` route** (Feb 2026): registered in App.js (was missing)
 - ✅ **Image uploads via GridFS** (Feb 2026): `POST /api/uploads/image` accepts multipart files (PNG/JPEG/WebP/GIF, max 5MB), stores in MongoDB GridFS, served via `GET /api/uploads/{id}` with long-cache. Settings page exposes "Upload from device" buttons for avatar and profile background alongside URL paste.
+- ✅ **Proxy whitelist fix** (Jun 2026): Chapter images for newer manga-spark titles (e.g., Return of the Mount Hua Sect) were hosted on additional CDN subdomains (`leksparkio`, `s2/s4/s5/s6/s7/s8/ssparkio/tempsparkio.manga-spark.com`) which the `/api/proxy/image` whitelist rejected (400). Whitelist relaxed to any `manga-spark.com`/`manga-spark.net` host. Verified all 10,623 mangaspark episodes have pages and reader loads images. NOTE: user must REDEPLOY for production to get the fix.
 - ✅ **MangaSpark scraper** (Feb 2026): `backend/scrape_mangaspark.py` imports popular Arabic manhwa from manga-spark.net. **122 titles + 2,301 chapters** imported with full Arabic chapter images. Backend image proxy extended with browser UA + Referer headers to bypass Cloudflare on `s3sparkio.manga-spark.com`. Re-runnable safely (skips already-imported titles). Grand total catalog: 3,876 titles.
 
 ## Backlog
