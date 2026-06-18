@@ -37,23 +37,17 @@
 - ✅ **Image uploads via GridFS** (Feb 2026): `POST /api/uploads/image` accepts multipart files (PNG/JPEG/WebP/GIF, max 5MB), stores in MongoDB GridFS, served via `GET /api/uploads/{id}` with long-cache. Settings page exposes "Upload from device" buttons for avatar and profile background alongside URL paste.
 - ✅ **Proxy whitelist fix** (Jun 2026): Chapter images for newer manga-spark titles (e.g., Return of the Mount Hua Sect) were hosted on additional CDN subdomains (`leksparkio`, `s2/s4/s5/s6/s7/s8/ssparkio/tempsparkio.manga-spark.com`) which the `/api/proxy/image` whitelist rejected (400). Whitelist relaxed to any `manga-spark.com`/`manga-spark.net` host. Verified all 10,623 mangaspark episodes have pages and reader loads images. NOTE: user must REDEPLOY for production to get the fix.
 - ✅ **MangaSpark scraper** (Feb 2026): `backend/scrape_mangaspark.py` imports popular Arabic manhwa from manga-spark.net. **122 titles + 2,301 chapters** imported with full Arabic chapter images. Backend image proxy extended with browser UA + Referer headers to bypass Cloudflare on `s3sparkio.manga-spark.com`. Re-runnable safely (skips already-imported titles). Grand total catalog: 3,876 titles.
+- ✅ **Deployment fix** (Feb 2026): Added missing `refresh_all_chapters()` function in `scrape_mangaspark.py` (caused ImportError on startup). Removed hardcoded `mongodb://localhost:27017` from `scrape_mangaspark.py` and `scrape_mangadex.py` — now use `MONGO_URL` / `DB_NAME` env vars for Atlas compatibility.
+- ✅ **Public browsing (optional auth)** (Feb 2026): Added `optional_user` dependency. Removed auth from `GET /api/episodes/{eid}/pages` and `GET /api/titles/{tid}/episodes/{eid}`. Frontend Layout hides messages/friends nav and shows "تسجيل الدخول" button for guests. Reusable `LoginGate` component wraps chat (`ChatRoom`), reviews submit form, and lobby. Verified by testing agent 100%.
+- ✅ **Continue Reading** (Feb 2026): New endpoints `POST /api/reading/progress`, `GET /api/reading/continue`, `GET /api/reading/progress/{title_id}` (upsert by user_id+title_id). `EpisodeView` writes server-side progress for logged-in users and falls back to `localStorage` (`reading:<title_id>`) for guests. `Home` shows horizontal "تابع القراءة" rail; `TitleDetail` shows a continue button. Works for guests AND logged-in.
+- ✅ **PWA + Play Store prep** (Feb 2026): `public/manifest.json` (name, icons 192/512, standalone, RTL), `public/service-worker.js` (network-first navigation, cache-first static, skip API), theme-color + apple-touch-icon meta tags in `index.html`. SW registered on window load. Static `/privacy` and `/terms` legal pages added (required for Play Store submission). Footer in Layout links to both.
 
 ## Backlog
 - P1: Emergent-managed Google OAuth (deferred per first-iteration scope)
 - P1: WebSocket-based realtime chat (currently 3s polling)
-- P2: Episode/chapter progress tracking per user
 - P2: Threaded review replies
-- P2: Push notifications (browser)
+- P2: Push notifications when a favorited title gets a new chapter
 - P2: Search across reviews and discussions
 - P2: Extend i18n dictionary to cover Lobby, DM, Friends, Admin, TitleDetail full strings
-h-log`.
-
-## Backlog
-- P1: Emergent-managed Google OAuth (deferred per first-iteration scope)
-- P1: Auto-update / nightly cron to fetch new chapters for scraped titles
-- P1: WebSocket-based realtime chat (currently 3s polling)
-- P2: Episode/chapter progress tracking per user
-- P2: Threaded review replies
-- P2: Push notifications (browser)
-- P2: Search across reviews and discussions
-- P2: Extend i18n dictionary to cover Lobby, DM, Friends, Admin, TitleDetail full strings
+- P2: Fallback poster for ContinueReading card when CDN image fails (testing agent suggestion)
+- P3: Move `@api.get('/')` above `app.include_router(api)` — pre-existing cosmetic 404 on root (no functional impact)
