@@ -77,7 +77,7 @@ HEADERS = {
     "Connection": "keep-alive"
 }
 
-SOURCE = "mangadex"
+SOURCE = "mangaspark"
 
 
 def parse_series_html(html: str, slug: str) -> dict | None:
