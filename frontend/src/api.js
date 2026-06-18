@@ -5,15 +5,9 @@ export const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 // Wrap MangaDex / MangaSpark image URLs through our backend proxy so the browser
 // doesn't get blocked by referer/rate-limit on direct CDN requests.
 export function proxyImg(url) {
-  if (!url) return url;
-  if (
-    url.includes("mangadex.network") ||
-    url.includes("mangadex.org") ||
-    url.includes("manga-spark")
-  ) {
-    return `${API}/proxy/image?url=${encodeURIComponent(url)}`;
-  }
-  return url;
+  if (!url) return "https://placehold.co";
+  if (url.startsWith("//")) return `https:${url}`;
+  return `${process.env.REACT_APP_BACKEND_URL}/api/proxy/image?url=${encodeURIComponent(url)}`;
 }
 
 const api = axios.create({ baseURL: API });

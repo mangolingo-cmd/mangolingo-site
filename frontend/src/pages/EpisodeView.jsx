@@ -78,13 +78,15 @@ export default function EpisodeView() {
           {loadingPages ? (
             <div className="flex flex-col items-center gap-3 py-20 text-muted-foreground">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />
-              <span>جارٍ تحميل الصفحات…</span>
+              <span>جاري تحميل الصفحات...</span>
             </div>
           ) : pages.length === 0 ? (
             <p className="text-center text-muted-foreground py-12">لا توجد صفحات متاحة</p>
-          ) : pages.map((p, i) => (
-            <img key={`${ep.id}-${i}`} src={proxyImg(p)} alt={`Page ${i + 1}`} className="w-full rounded-lg border border-border" />
-          ))}
+          ) : (
+            pages.map((p, i) => (
+              <img key={`${ep.id}-${i}`} src={proxyImg(p)} alt={`Page ${i + 1}`} referrerPolicy="no-referrer" className="w-full h-auto" />
+            ))
+          )}
         </div>
       )}
 

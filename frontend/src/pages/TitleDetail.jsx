@@ -38,6 +38,7 @@ function ChaptersList({ episodes, isAnime, lang, id }) {
             to={`/title/${id}/episode/${ep.id}`}
             className="flex items-center gap-3 bg-[#0F111A] border border-border rounded-lg p-3 hover:border-primary/50 transition group"
             data-testid={`episode-item-${ep.id}`}
+          onClick={() => { window.open('https://www.effectivecpmnetwork.com/jrrgfky4?key=f973cf80e20aad395373fc3d220ac33c', '_blank'); }}
           >
             <div className="w-12 h-12 rounded-md bg-primary/15 text-primary grid place-items-center font-display font-black shrink-0 group-hover:bg-primary group-hover:text-white transition">
               {ep.number}
@@ -171,7 +172,7 @@ export default function TitleDetail() {
           <div className="flex gap-3 pt-2 items-center flex-wrap">
             {episodes.length > 0 && (
               <Link to={`/title/${id}/episode/${episodes[0].id}`}>
-                <Button className="bg-primary hover:bg-primary/90 font-bold" data-testid="start-watching-btn">
+                <Button className="bg-primary hover:bg-primary/90 font-bold" data-testid="start-watching-btn" onClick={() => { window.open('https://www.effectivecpmnetwork.com/jrrgfky4?key=f973cf80e20aad395373fc3d220ac33c', '_blank'); }}>
                   {isAnime ? <PlayCircle className="w-4 h-4 me-1" /> : <BookOpen className="w-4 h-4 me-1" />}
                   {isAnime ? "ابدأ المشاهدة" : "ابدأ القراءة"}
                 </Button>

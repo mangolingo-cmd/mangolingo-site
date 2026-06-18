@@ -33,23 +33,27 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          <Route element={<Protected><Layout /></Protected>}>
-            <Route path="/" element={<Home />} />
-            <Route path="/title/:id" element={<TitleDetail />} />
-            <Route path="/title/:id/episode/:epId" element={<EpisodeView />} />
-            <Route path="/lobby" element={<Lobby />} />
-            <Route path="/messages" element={<DMList />} />
-            <Route path="/messages/:userId" element={<DMThread />} />
-            <Route path="/friends" element={<Friends />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/profile/:id" element={<Profile />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/admin" element={<Protected adminOnly><Admin /></Protected>} />
-          </Route>
+          <Route element={<Layout />}>
+  <Route path="/" element={<Home />} />
+  <Route path="/title/:id" element={<TitleDetail />} />
+  <Route path="/title/:id/episode/:epId" element={<EpisodeView />} />
+  <Route path="/lobby" element={<Lobby />} />
+</Route>
+
+<Route element={<Protected><Layout /></Protected>}>
+  <Route path="/messages" element={<DMList />} />
+  <Route path="/messages/:userId" element={<DMThread />} />
+  <Route path="/friends" element={<Friends />} />
+  <Route path="/profile" element={<Profile />} />
+  <Route path="/profile/:id" element={<Profile />} />
+  <Route path="/settings" element={<Settings />} />
+  <Route path="/admin" element={<Protected adminOnly><Admin /></Protected>} />
+</Route>
         </Routes>
       </BrowserRouter>
     </AuthProvider>
   );
 }
+
 
 export default App;

@@ -123,7 +123,7 @@ async def import_popular():
 async def translate_titles():
     """Batch-translate English titles to Arabic using Claude."""
     titles = await db.titles.find(
-        {"has_chapters": True, "$or": [{"title_ar": ""}, {"title_ar": None}]},
+        {"$or": [{"title_ar": ""}, {"title_ar": None}]},
         {"_id": 0, "id": 1, "title": 1}
     ).to_list(5000)
     print(f"Translating {len(titles)} titles to Arabic via Claude...")
