@@ -138,6 +138,24 @@ async def require_admin(user: dict = Depends(get_current_user)) -> dict:
         raise HTTPException(403, "Admin only")
     return user
 
+async def optional_user(request: Request) -> dict | None:
+    """Returns the current user if authenticated, otherwise None.
+    Never raises 401 — used for endpoints that work for both guests and logged-in users."""
+    auth = request.headers.get("Authorization", "")
+    token = None
+    if auth.startswith("Bearer "):
+        token = auth[7:]
+    elif request.cookies.get("access_token"):
+        token = request.cookies.get("access_token")
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
+    except jwt.PyJWTError:
+        return None
+    user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0})
+    return user
+
 def dm_room_id(a: str, b: str) -> str:
     return "dm_" + "_".join(sorted([a, b]))
 
@@ -577,9 +595,8 @@ async def list_languages(tid: str):
     return {"languages": [lang for lang in langs if lang]}
 
 @api.get("/episodes/{eid}/pages")
-async def get_episode_pages(eid: str, user: dict = Depends(get_current_user)):
-    """Return live page image URLs. For MangaDex chapters: fetched fresh from at-home server.
-    For manually-added chapters: returns stored pages."""
+async def get_episode_pages(eid: str):
+    """Return live page image URLs. Public — no auth required for reading."""
     ep = await db.episodes.find_one({"id": eid}, {"_id": 0})
     if not ep:
         raise HTTPException(404, "الفصل غير موجود")
@@ -599,7 +616,7 @@ async def get_episode_pages(eid: str, user: dict = Depends(get_current_user)):
     return {"pages": ep.get("pages", [])}
 
 @api.get("/titles/{tid}/episodes/{eid}")
-async def get_episode(tid: str, eid: str, user: dict = Depends(get_current_user)):
+async def get_episode(tid: str, eid: str):
     ep = await db.episodes.find_one({"id": eid, "title_id": tid}, {"_id": 0})
     if not ep:
         raise HTTPException(404, "الحلقة غير موجودة")
@@ -628,6 +645,55 @@ async def create_episode(tid: str, data: EpisodeIn, _: dict = Depends(require_ad
 async def delete_episode(tid: str, eid: str, _: dict = Depends(require_admin)):
     await db.episodes.delete_one({"id": eid, "title_id": tid})
     return {"ok": True}
+
+# -------- Reading progress (Continue Reading) --------
+class ProgressIn(BaseModel):
+    title_id: str
+    episode_id: str
+    episode_number: float | int | None = None
+    page: int = 0
+
+@api.post("/reading/progress")
+async def save_progress(data: ProgressIn, user: dict = Depends(get_current_user)):
+    now = datetime.now(timezone.utc).isoformat()
+    await db.reading_progress.update_one(
+        {"user_id": user["id"], "title_id": data.title_id},
+        {"$set": {
+            "user_id": user["id"],
+            "title_id": data.title_id,
+            "episode_id": data.episode_id,
+            "episode_number": data.episode_number,
+            "page": data.page,
+            "updated_at": now,
+        }},
+        upsert=True,
+    )
+    return {"ok": True}
+
+@api.get("/reading/continue")
+async def list_continue(user: dict = Depends(get_current_user)):
+    """Return up to 12 most-recently-read titles with their last episode info."""
+    cur = db.reading_progress.find({"user_id": user["id"]}, {"_id": 0}).sort("updated_at", -1).limit(12)
+    items = await cur.to_list(length=12)
+    out = []
+    for it in items:
+        title = await db.titles.find_one({"id": it["title_id"]}, {"_id": 0})
+        if not title:
+            continue
+        out.append({
+            "title_id": it["title_id"],
+            "episode_id": it["episode_id"],
+            "episode_number": it.get("episode_number"),
+            "page": it.get("page", 0),
+            "updated_at": it.get("updated_at"),
+            "title": title,
+        })
+    return out
+
+@api.get("/reading/progress/{title_id}")
+async def get_progress(title_id: str, user: dict = Depends(get_current_user)):
+    p = await db.reading_progress.find_one({"user_id": user["id"], "title_id": title_id}, {"_id": 0})
+    return p or {}
 
 # -------- MangaDex integration --------
 MANGADEX_BASE = "https://api.mangadex.org"

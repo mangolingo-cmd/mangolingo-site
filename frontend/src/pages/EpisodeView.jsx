@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import api, { proxyImg } from "@/api";
+import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { ChevronRight, ChevronLeft, ArrowRight, Loader2 } from "lucide-react";
 
 export default function EpisodeView() {
   const { id, epId } = useParams();
+  const { user } = useAuth();
   const nav = useNavigate();
   const [ep, setEp] = useState(null);
   const [title, setTitle] = useState(null);
@@ -34,11 +36,27 @@ export default function EpisodeView() {
             setLoadingPages(false);
           }
         }
+        // Save reading progress (server for logged-in, localStorage for guests)
+        const payload = {
+          title_id: id,
+          episode_id: epId,
+          episode_number: a.data?.number,
+          page: 0,
+        };
+        try {
+          localStorage.setItem(`reading:${id}`, JSON.stringify({
+            ...payload,
+            updated_at: new Date().toISOString(),
+          }));
+        } catch (e) { /* ignore */ }
+        if (user) {
+          api.post("/reading/progress", payload).catch(() => {});
+        }
       } catch (e) {
         console.error("episode load failed", e);
       }
     })();
-  }, [id, epId]);
+  }, [id, epId, user?.id]);
 
   if (!ep || !title) return <div className="text-center py-12 text-muted-foreground">جارٍ التحميل…</div>;
 

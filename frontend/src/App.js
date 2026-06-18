@@ -16,6 +16,8 @@ import Profile from "@/pages/Profile";
 import Admin from "@/pages/Admin";
 import Settings from "@/pages/Settings";
 import EpisodeView from "@/pages/EpisodeView";
+import PrivacyPolicy from "@/pages/PrivacyPolicy";
+import Terms from "@/pages/Terms";
 
 function Protected({ children, adminOnly }) {
   const { user, loading } = useAuth();
@@ -38,6 +40,8 @@ function App() {
   <Route path="/title/:id" element={<TitleDetail />} />
   <Route path="/title/:id/episode/:epId" element={<EpisodeView />} />
   <Route path="/lobby" element={<Lobby />} />
+  <Route path="/privacy" element={<PrivacyPolicy />} />
+  <Route path="/terms" element={<Terms />} />
 </Route>
 
 <Route element={<Protected><Layout /></Protected>}>

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Send } from "lucide-react";
 import { toast } from "sonner";
+import LoginGate from "@/components/LoginGate";
 
 export default function ChatRoom({ roomId, title }) {
   const { user } = useAuth();
@@ -15,6 +16,7 @@ export default function ChatRoom({ roomId, title }) {
   const endRef = useRef(null);
 
   const load = async () => {
+    if (!user) return;
     try {
       const { data } = await api.get(`/rooms/${roomId}/messages`);
       setMessages(data);
@@ -24,15 +26,25 @@ export default function ChatRoom({ roomId, title }) {
   };
 
   useEffect(() => {
+    if (!user) return;
     load();
     const id = setInterval(load, 3000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId]);
+  }, [roomId, user]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  if (!user) {
+    return (
+      <LoginGate
+        testid="chat-login-gate"
+        message="سجّل دخولك للمشاركة في النقاش حول هذا العمل ولقاء عشاق آخرين."
+      />
+    );
+  }
 
   const send = async (e) => {
     e?.preventDefault();

@@ -1,0 +1,46 @@
+{
+  "summary": "Comprehensive backend + frontend testing of optional-auth (guest browsing), Continue Reading, PWA assets, and legal pages. Backend: 47/48 tests pass (97.9%) — 21/21 new feature tests pass; 26/27 regression tests pass (single pre-known failure: GET /api/ returns 404 due to route ordering bug already reported in iteration_1). Frontend: every requested guest gate, login gate, continue-reading-rail/button, footer, /privacy, /terms, and authenticated /api/reading/* integration was verified end-to-end via Playwright.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/", "issue": "Still returns 404 — @api.get('/') is defined AFTER app.include_router(api) in server.py. Pre-existing bug from iteration_1, not regressed."},
+      {"endpoint": "GET /api/episodes/{eid}/pages", "issue": "Occasionally upstream MangaDex/CDN host returns 400/502 (cloud-IP block). Code is correct; this is the documented external CDN limitation."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Continue Reading rail card", "issues": ["Cover thumbnail occasionally renders blank/black because its <img> uses the same upstream cover that fails image-proxy for some CDN hosts. Add a fallback poster or lazy-retry. Non-blocking."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_optional_auth_and_pwa.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iter2_optional_auth.xml",
+    "/app/test_reports/pytest/iter2_regression.xml"
+  ],
+  "action_items": [
+    "Move @api.get('/') above app.include_router(api) in /app/backend/server.py (low priority cosmetic).",
+    "Optional: fallback cover for ContinueReading card when image proxy 400s on a CDN host."
+  ],
+  "critical_code_review_comments": [
+    "optional_user dependency correctly returns None instead of raising 401 — clean implementation.",
+    "GET /api/episodes/{eid}/pages and /api/titles/{tid}/episodes/{eid} are now public — verified with curl/requests without Authorization header.",
+    "POST /api/reading/progress is upsert keyed on (user_id, title_id) — correct dedup. GET /api/reading/continue enriches with title doc and limits to 12. _id correctly projected out.",
+    "/api/titles list response shape changed to {items, page, limit, total} since iteration_1 — old test had to be updated. Frontend Home.jsx already adapts to this; just flagging the implicit contract change for future testers.",
+    "Manifest, service-worker, and icon assets all served with correct content-types.",
+    "Frontend EpisodeView correctly writes localStorage `reading:<title_id>` for guests and additionally POSTs /api/reading/progress when authenticated — verified via network capture."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_optional_auth_and_pwa.py (new)",
+    "/app/backend/tests/backend_test.py (updated: adapt to paginated /api/titles response + manga/manhwa-only type)"
+  ],
+  "success_rate": {"backend": "97.9% (47/48)", "frontend": "100% of requested guest + auth + PWA + legal flows"},
+  "test_credentials": "tester@otaku.com / Tester@12345 (works), admin@otaku.com / Admin@12345 (works)",
+  "seed_data_creation": "Created TEST_ep1 episode on the first seeded title via admin login to enable the public episode/page tests. Title row used: first item from GET /api/titles (Boundless Necromancer in current DB).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend list /api/titles returns {items,page,limit,total} not a bare list — handle accordingly. /api/episodes/{eid}/pages and /api/titles/{tid}/episodes/{eid} are public (no auth). /api/reading/* requires auth. Manifest at /manifest.json, service worker at /service-worker.js, icons at /icons/icon-{192,512}.png — all 200. Frontend routes /privacy and /terms have data-testid='privacy-page' & 'terms-page'. Footer is data-testid='site-footer' with children footer-privacy & footer-terms. Login button data-testid='nav-login-btn'. Continue Reading: rail data-testid='continue-reading-rail' on Home, button data-testid='continue-reading-btn' on TitleDetail. LoginGate testids: 'chat-login-gate' (chat/discuss + /lobby), 'reviews-login-gate' (review form).",
+  "rca_of_the_issue": "n/a — feature set verified working. Sole regression failure (test_root) is pre-existing route-ordering bug already documented in iteration_1.json."
+}

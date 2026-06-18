@@ -4,6 +4,12 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#050505" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="MangaVerse" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <link rel="manifest" href="/manifest.json" />
+        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
        <meta name="description" content="موقع MangaVerse لقراءة المانجا والمانهوا المترجمة مجاناً. تصفح أحدث فصول المانجا والويب تون بجودة عالية وبدون إعلانات مزعجة." />
 
         <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -30,5 +36,14 @@
             </svg>
             <p style="color: #FFF !important; font-family: 'Cairo', sans-serif !important; font-size: 13px !important; font-weight: 600 !important; line-height: 20px !important; margin: 0 !important; white-space: nowrap !important;">Made with Emergent</p>
         </a>
+        <script>
+          if ("serviceWorker" in navigator) {
+            window.addEventListener("load", function () {
+              navigator.serviceWorker.register("/service-worker.js").catch(function (e) {
+                console.warn("SW registration failed", e);
+              });
+            });
+          }
+        </script>
     </body>
 </html>

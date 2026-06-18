@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import api, { fmtError, proxyImg } from "@/api";
+import { useAuth } from "@/context/AuthContext";
 import { arGenre } from "@/lib/genres";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -9,8 +10,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Star, MessageSquare, Bookmark, PlayCircle, BookOpen } from "lucide-react";
+import { Star, MessageSquare, Bookmark, PlayCircle, BookOpen, RotateCcw } from "lucide-react";
 import ChatRoom from "@/components/ChatRoom";
+import LoginGate from "@/components/LoginGate";
 
 const TYPE_LABEL = { anime: "أنمي", manhwa: "مانهوا", manga: "مانجا" };
 
@@ -68,6 +70,8 @@ const STATUS_LABEL = {
 
 export default function TitleDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [t, setT] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [episodes, setEpisodes] = useState([]);
@@ -76,6 +80,21 @@ export default function TitleDetail() {
   const [rating, setRating] = useState(8);
   const [content, setContent] = useState("");
   const [wlStatus, setWlStatus] = useState("");
+  const [progress, setProgress] = useState(null);
+
+  const loadProgress = async () => {
+    // Prefer server-side progress for logged-in users, fall back to localStorage for guests.
+    if (user) {
+      try {
+        const { data } = await api.get(`/reading/progress/${id}`);
+        if (data && data.episode_id) { setProgress(data); return; }
+      } catch (e) { /* ignore */ }
+    }
+    try {
+      const raw = localStorage.getItem(`reading:${id}`);
+      if (raw) setProgress(JSON.parse(raw));
+    } catch (e) { /* ignore */ }
+  };
 
   const loadTitle = async () => {
     try {
@@ -105,7 +124,7 @@ export default function TitleDetail() {
     await loadEpisodes(lang);
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
+  useEffect(() => { load(); loadProgress(); /* eslint-disable-next-line */ }, [id, user?.id]);
 
   useEffect(() => {
     if (t) loadEpisodes(lang);
@@ -113,6 +132,7 @@ export default function TitleDetail() {
   }, [lang]);
 
   const submitReview = async () => {
+    if (!user) { navigate("/login"); return; }
     if (!content.trim()) return toast.error("اكتب مراجعتك أولاً");
     try {
       await api.post(`/titles/${id}/reviews`, { rating, content });
@@ -125,6 +145,7 @@ export default function TitleDetail() {
   };
 
   const setWatch = async (status) => {
+    if (!user) { navigate("/login"); return; }
     setWlStatus(status);
     try {
       await api.post("/watchlist", { title_id: id, status });
@@ -170,6 +191,15 @@ export default function TitleDetail() {
             {(t.genres || []).map((g) => <Badge key={g} variant="secondary" className="bg-secondary">{arGenre(g)}</Badge>)}
           </div>
           <div className="flex gap-3 pt-2 items-center flex-wrap">
+            {progress && progress.episode_id && episodes.some((e) => e.id === progress.episode_id) && (
+              <Link to={`/title/${id}/episode/${progress.episode_id}`}>
+                <Button variant="outline" className="font-bold border-accent text-accent hover:bg-accent/10" data-testid="continue-reading-btn">
+                  <RotateCcw className="w-4 h-4 me-1" />
+                  {isAnime ? "تابع المشاهدة" : "تابع القراءة"}
+                  {progress.episode_number != null && ` — ${isAnime ? "الحلقة" : "الفصل"} ${progress.episode_number}`}
+                </Button>
+              </Link>
+            )}
             {episodes.length > 0 && (
               <Link to={`/title/${id}/episode/${episodes[0].id}`}>
                 <Button className="bg-primary hover:bg-primary/90 font-bold" data-testid="start-watching-btn" onClick={() => { window.open('https://www.effectivecpmnetwork.com/jrrgfky4?key=f973cf80e20aad395373fc3d220ac33c', '_blank'); }}>
@@ -242,6 +272,7 @@ export default function TitleDetail() {
         </TabsContent>
 
         <TabsContent value="reviews" className="mt-4 space-y-4">
+          {user ? (
           <div className="bg-[#0F111A] border border-border rounded-lg p-4 space-y-3">
             <div className="flex items-center gap-3">
               <span className="text-sm">تقييمك:</span>
@@ -259,6 +290,9 @@ export default function TitleDetail() {
             />
             <Button onClick={submitReview} className="bg-primary hover:bg-primary/90" data-testid="review-submit">نشر المراجعة</Button>
           </div>
+          ) : (
+            <LoginGate testid="reviews-login-gate" message="سجّل دخولك لتشارك رأيك في هذا العمل." />
+          )}
           {reviews.map((r) => (
             <div key={r.id} className="bg-[#0F111A] border border-border rounded-lg p-4" data-testid={`review-${r.id}`}>
               <div className="flex items-center gap-3 mb-2">

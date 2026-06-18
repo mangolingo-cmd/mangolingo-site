@@ -8,6 +8,7 @@ import { arGenre } from "@/lib/genres";
 import { t as tr } from "@/lib/i18n";
 import { useAuth } from "@/context/AuthContext";
 import Pagination from "@/components/Pagination";
+import ContinueReading from "@/components/ContinueReading";
 
 const HERO = "https://images.unsplash.com/photo-1752338384552-1cda3350baba?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Nzh8MHwxfHNlYXJjaHw0fHx0b2t5byUyMG5pZ2h0JTIwYWxsZXl8ZW58MHx8fHwxNzc4NTA5MDMwfDA&ixlib=rb-4.1.0&q=85";
 
@@ -76,6 +77,8 @@ export default function Home() {
           </p>
         </div>
       </section>
+
+      <ContinueReading />
 
       {/* Search + tabs */}
       <section>

@@ -3,7 +3,7 @@ import { Outlet, NavLink, Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import api from "@/api";
 import { t as tr, dirFor } from "@/lib/i18n";
-import { User, Settings as SettingsIcon, LogOut, Bell, Shield, Send, Sparkles, Users, Home as HomeIcon } from "lucide-react";
+import { User, Settings as SettingsIcon, LogOut, Bell, Shield, Send, Sparkles, Users, Home as HomeIcon, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -12,12 +12,19 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 
-const buildNav = (locale) => [
-  { to: "/", label: tr(locale, "home"), icon: HomeIcon, testid: "nav-home" },
-  { to: "/lobby", label: tr(locale, "lobby"), icon: Sparkles, testid: "nav-lobby" },
-  { to: "/messages", label: tr(locale, "messages"), icon: Send, testid: "nav-messages" },
-  { to: "/friends", label: tr(locale, "friends"), icon: Users, testid: "nav-friends" },
-];
+const buildNav = (locale, isGuest) => {
+  const items = [
+    { to: "/", label: tr(locale, "home"), icon: HomeIcon, testid: "nav-home" },
+    { to: "/lobby", label: tr(locale, "lobby"), icon: Sparkles, testid: "nav-lobby" },
+  ];
+  if (!isGuest) {
+    items.push(
+      { to: "/messages", label: tr(locale, "messages"), icon: Send, testid: "nav-messages" },
+      { to: "/friends", label: tr(locale, "friends"), icon: Users, testid: "nav-friends" },
+    );
+  }
+  return items;
+};
 
 export default function Layout() {
   const { user, logout } = useAuth();
@@ -25,7 +32,7 @@ export default function Layout() {
   const [unread, setUnread] = useState(0);
   const [notifs, setNotifs] = useState([]);
   const locale = user?.locale || "ar";
-  const navItems = buildNav(locale);
+  const navItems = buildNav(locale, !user);
 
   // Apply document dir/lang reactively
   useEffect(() => {
@@ -106,6 +113,15 @@ export default function Layout() {
           </nav>
 
           <div className="flex items-center gap-2 ms-auto md:ms-0">
+            {!user ? (
+              <Link to="/login" data-testid="nav-login-btn">
+                <Button size="sm" className="bg-primary hover:bg-primary/90 font-bold">
+                  <LogIn className="w-4 h-4 me-1" />
+                  {tr(locale, "login") || "تسجيل الدخول"}
+                </Button>
+              </Link>
+            ) : (
+              <>
             <DropdownMenu onOpenChange={(o) => o && openNotifs()}>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="relative" data-testid="notifications-btn">
@@ -169,6 +185,8 @@ export default function Layout() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+              </>
+            )}
           </div>
         </div>
 
@@ -203,6 +221,16 @@ export default function Layout() {
 ></ins>
         <Outlet />
       </main>
+
+      <footer className="border-t border-border mt-8 py-6 text-center text-xs text-muted-foreground" data-testid="site-footer">
+        <div className="flex items-center justify-center gap-4 flex-wrap">
+          <Link to="/privacy" className="hover:text-primary" data-testid="footer-privacy">سياسة الخصوصية</Link>
+          <span>•</span>
+          <Link to="/terms" className="hover:text-primary" data-testid="footer-terms">شروط الاستخدام</Link>
+          <span>•</span>
+          <span>© 2026 MangaVerse</span>
+        </div>
+      </footer>
     </div>
   );
 }

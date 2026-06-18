@@ -10,6 +10,7 @@ const DICT = {
     profile: "ملفي الشخصي",
     settings: "الإعدادات",
     logout: "تسجيل الخروج",
+    login: "تسجيل الدخول",
     notifications: "الإشعارات",
     no_notifications: "لا توجد إشعارات",
     // Home
@@ -74,6 +75,7 @@ const DICT = {
     profile: "Profile",
     settings: "Settings",
     logout: "Logout",
+    login: "Sign in",
     notifications: "Notifications",
     no_notifications: "No notifications",
     // Home

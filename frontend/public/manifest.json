@@ -1,0 +1,28 @@
+{
+  "name": "MangaVerse — عالم المانجا والمانهوا",
+  "short_name": "MangaVerse",
+  "description": "اقرأ المانجا والمانهوا بالعربية والإنجليزية. تابع آخر الفصول، شارك في النقاش، وتواصل مع عشاق الأنمي.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#050505",
+  "theme_color": "#050505",
+  "lang": "ar",
+  "dir": "rtl",
+  "categories": ["entertainment", "books", "social"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
