@@ -69,7 +69,9 @@ POPULAR_SLUGS = [
     "villain-to-kill",
     "auto-hunting-with-clones",
     "the-s-classes-that-i-raised",
-    "dungeon-reset"
+    "dungeon-reset",
+    "top-tier-providence-secretly-cultivate-for-a-thousand-years",
+    "the-god-of-high-school"
 ]
 
 HEADERS = {
