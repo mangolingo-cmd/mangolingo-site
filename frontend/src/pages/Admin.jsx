@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, Plus, FilmIcon, BookOpen, PlayCircle, RefreshCw, Clock } from "lucide-react";
+import { Trash2, Plus, FilmIcon, BookOpen, PlayCircle, RefreshCw, Clock, Wrench, Image as ImageIcon, Package } from "lucide-react";
 
 const EMPTY = {
   type: "anime",
@@ -135,6 +135,22 @@ export default function Admin() {
     setRefreshing(false);
   };
 
+  const [maintBusy, setMaintBusy] = useState("");
+
+  const runMaintenance = async (kind, endpoint, infoMsg, fmtSuccess) => {
+    if (!window.confirm(`تأكيد تشغيل: ${infoMsg}؟`)) return;
+    setMaintBusy(kind);
+    toast.info(infoMsg);
+    try {
+      const { data } = await api.post(endpoint, null, { timeout: 900000 });
+      toast.success(fmtSuccess(data));
+      load();
+    } catch (e) {
+      toast.error(fmtError(e.response?.data?.detail));
+    }
+    setMaintBusy("");
+  };
+
   const save = async () => {
     if (!form.title.trim()) return toast.error("العنوان مطلوب");
     const payload = {
@@ -221,6 +237,64 @@ export default function Admin() {
             تنظيف العناوين بدون فصول
           </Button>
         </div>
+      </section>
+
+      <section className="bg-[#0F111A] border border-accent/40 rounded-xl p-6 space-y-3" data-testid="prod-maintenance">
+        <h2 className="font-display text-xl font-black flex items-center gap-2">
+          <Wrench className="w-5 h-5 text-accent" /> صيانة قاعدة بيانات الإنتاج
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          استخدم هذه الأزرار لمزامنة وتنظيف قاعدة بيانات الإنتاج بعد إعادة النشر.
+          آمنة وقابلة للتشغيل أكثر من مرة.
+        </p>
+        <div className="flex gap-2 flex-wrap">
+          <Button
+            onClick={() => runMaintenance(
+              "import-bundle",
+              "/admin/import-mangaspark-bundle",
+              "استيراد الـ 163 مانهوا العربية من الحزمة المرفقة بالكود",
+              (d) => `استورد ${d.titles_upserted} عنواناً + ${d.chapters_inserted} فصلاً`,
+            )}
+            disabled={!!maintBusy}
+            className="bg-accent hover:bg-accent/90 text-black"
+            data-testid="import-bundle-btn"
+          >
+            <Package className={`w-4 h-4 me-1 ${maintBusy === "import-bundle" ? "animate-spin" : ""}`} />
+            {maintBusy === "import-bundle" ? "جارٍ الاستيراد..." : "استيراد حزمة المانهوات"}
+          </Button>
+          <Button
+            onClick={() => runMaintenance(
+              "dedupe",
+              "/admin/dedupe-titles",
+              "دمج العناوين المكررة وحذف المدخلات الفارغة",
+              (d) => `دُمج ${d.merged_titles} • حُذف ${d.placeholders_deleted} فارغ • تبقى ${d.titles_remaining} عنواناً`,
+            )}
+            disabled={!!maintBusy}
+            variant="secondary"
+            data-testid="dedupe-btn"
+          >
+            <Trash2 className={`w-4 h-4 me-1 ${maintBusy === "dedupe" ? "animate-pulse" : ""}`} />
+            {maintBusy === "dedupe" ? "جارٍ التنظيف..." : "تنظيف المكررات"}
+          </Button>
+          <Button
+            onClick={() => runMaintenance(
+              "covers",
+              "/admin/fix-missing-covers",
+              "إصلاح الأغلفة الناقصة عبر MangaDex Cover API",
+              (d) => `أُصلح ${d.covers_updated} غلافاً من أصل ${d.scanned}، تبقى ${d.still_missing} بدون غلاف`,
+            )}
+            disabled={!!maintBusy}
+            variant="secondary"
+            data-testid="fix-covers-btn"
+          >
+            <ImageIcon className={`w-4 h-4 me-1 ${maintBusy === "covers" ? "animate-pulse" : ""}`} />
+            {maintBusy === "covers" ? "جارٍ الإصلاح..." : "إصلاح الأغلفة"}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground border-t border-border pt-2 mt-2">
+          💡 الترتيب المقترح: <strong>1) استيراد الحزمة</strong> ←
+          <strong> 2) تنظيف المكررات</strong> ← <strong>3) إصلاح الأغلفة</strong>
+        </p>
       </section>
 
       <section className="bg-[#0F111A] border border-border rounded-xl p-6 space-y-3" data-testid="mangaspark-refresh">

@@ -1010,6 +1010,168 @@ async def admin_refresh_mangaspark(_: dict = Depends(require_admin)):
     })
     return stats
 
+# -------- Production maintenance endpoints (admin-only) --------
+@api.post("/admin/dedupe-titles")
+async def admin_dedupe_titles(_: dict = Depends(require_admin)):
+    """Merge duplicate titles (same source_slug) and remove stale empty placeholders."""
+    from collections import defaultdict
+    titles = await db.titles.find({}, {"_id": 0}).to_list(length=None)
+    groups: dict = defaultdict(list)
+    for t in titles:
+        slug = (t.get("source_slug") or "").strip().lower()
+        ttype = (t.get("type") or "").strip().lower()
+        title_norm = (t.get("title") or "").strip().lower()
+        key = (slug, ttype) if slug else (f"name:{title_norm}", ttype)
+        groups[key].append(t)
+    merged_titles = 0
+    moved_chapters = 0
+    dropped_chapters = 0
+    for _, items in groups.items():
+        if len(items) < 2:
+            continue
+        counts = []
+        for t in items:
+            cnt = await db.episodes.count_documents({"title_id": t["id"]})
+            counts.append((cnt, t))
+        counts.sort(key=lambda x: (-x[0], x[1].get("created_at", "")))
+        keeper = counts[0][1]
+        existing_keys = set()
+        async for ep in db.episodes.find({"title_id": keeper["id"]}, {"number": 1, "language": 1}):
+            existing_keys.add((ep.get("number"), ep.get("language", "ar")))
+        for _, dupe in counts[1:]:
+            async for ep in db.episodes.find({"title_id": dupe["id"]}):
+                k = (ep.get("number"), ep.get("language", "ar"))
+                if k in existing_keys:
+                    await db.episodes.delete_one({"_id": ep["_id"]})
+                    dropped_chapters += 1
+                else:
+                    await db.episodes.update_one({"_id": ep["_id"]}, {"$set": {"title_id": keeper["id"]}})
+                    existing_keys.add(k)
+                    moved_chapters += 1
+            await db.watchlist.update_many({"title_id": dupe["id"]}, {"$set": {"title_id": keeper["id"]}})
+            await db.reviews.update_many({"title_id": dupe["id"]}, {"$set": {"title_id": keeper["id"]}})
+            await db.reading_progress.update_many({"title_id": dupe["id"]}, {"$set": {"title_id": keeper["id"]}})
+            await db.titles.delete_one({"id": dupe["id"]})
+            merged_titles += 1
+    # Delete stale empty placeholders sharing a name with a populated title
+    titles2 = await db.titles.find({}, {"_id": 0}).to_list(length=None)
+    name_map: dict = {}
+    for t in titles2:
+        n = (t.get("title") or "").strip().lower()
+        if not n:
+            continue
+        cnt = await db.episodes.count_documents({"title_id": t["id"]})
+        name_map.setdefault(n, []).append((t["id"], cnt))
+    placeholders_deleted = 0
+    for _, lst in name_map.items():
+        if len(lst) < 2 or not any(c > 0 for _, c in lst):
+            continue
+        for tid, cnt in lst:
+            if cnt == 0:
+                await db.titles.delete_one({"id": tid})
+                await db.watchlist.delete_many({"title_id": tid})
+                await db.reviews.delete_many({"title_id": tid})
+                await db.reading_progress.delete_many({"title_id": tid})
+                placeholders_deleted += 1
+    stats = {
+        "merged_titles": merged_titles,
+        "placeholders_deleted": placeholders_deleted,
+        "moved_chapters": moved_chapters,
+        "dropped_duplicate_chapters": dropped_chapters,
+        "titles_remaining": await db.titles.count_documents({}),
+    }
+    await db.system_logs.insert_one({
+        "kind": "admin_dedupe",
+        "at": datetime.now(timezone.utc).isoformat(),
+        **stats,
+    })
+    return stats
+
+
+@api.post("/admin/fix-missing-covers")
+async def admin_fix_missing_covers(_: dict = Depends(require_admin)):
+    """For titles with empty cover_url but a known mangadex_id, query MangaDex
+    Cover API in batches and populate cover_url."""
+    missing = await db.titles.find(
+        {
+            "mangadex_id": {"$exists": True, "$nin": [None, ""]},
+            "$or": [{"cover_url": ""}, {"cover_url": None}, {"cover_url": {"$exists": False}}],
+        },
+        {"_id": 0, "id": 1, "mangadex_id": 1},
+    ).to_list(length=None)
+    updated = 0
+    async with httpx.AsyncClient(timeout=20) as c:
+        for start in range(0, len(missing), 50):
+            batch = missing[start : start + 50]
+            params = [("manga[]", t["mangadex_id"]) for t in batch] + [("limit", 100)]
+            r = await c.get("https://api.mangadex.org/cover", params=params)
+            if r.status_code != 200:
+                continue
+            cov_by_mid: dict = {}
+            for item in r.json().get("data", []):
+                fn = item.get("attributes", {}).get("fileName")
+                if not fn:
+                    continue
+                for rel in item.get("relationships", []):
+                    if rel.get("type") == "manga" and rel["id"] not in cov_by_mid:
+                        cov_by_mid[rel["id"]] = (
+                            f"https://uploads.mangadex.org/covers/{rel['id']}/{fn}.512.jpg"
+                        )
+                        break
+            for t in batch:
+                url = cov_by_mid.get(t["mangadex_id"])
+                if url:
+                    await db.titles.update_one({"id": t["id"]}, {"$set": {"cover_url": url}})
+                    updated += 1
+            await asyncio.sleep(0.3)
+    remaining = await db.titles.count_documents(
+        {"$or": [{"cover_url": ""}, {"cover_url": None}, {"cover_url": {"$exists": False}}]}
+    )
+    return {"covers_updated": updated, "still_missing": remaining, "scanned": len(missing)}
+
+
+@api.post("/admin/import-mangaspark-bundle")
+async def admin_import_mangaspark_bundle(_: dict = Depends(require_admin)):
+    """Load /app/backend/seed/mangaspark_export.json.gz and upsert into MongoDB.
+    Used to sync curated mangaspark data from preview to production."""
+    import gzip
+    import json
+    path = os.path.join(os.path.dirname(__file__), "seed", "mangaspark_export.json.gz")
+    if not os.path.exists(path):
+        raise HTTPException(404, f"Bundle not found at {path}")
+    with open(path, "rb") as f:
+        raw = gzip.decompress(f.read())
+    bundle = json.loads(raw)
+    titles = bundle.get("titles", [])
+    episodes = bundle.get("episodes", [])
+
+    titles_upserted = 0
+    for t in titles:
+        await db.titles.update_one({"id": t["id"]}, {"$set": t}, upsert=True)
+        titles_upserted += 1
+
+    title_ids = {t["id"] for t in titles}
+    for tid in title_ids:
+        await db.episodes.delete_many({"title_id": tid})
+    chapters_inserted = 0
+    for ep in episodes:
+        await db.episodes.insert_one(ep)
+        chapters_inserted += 1
+
+    stats = {
+        "titles_upserted": titles_upserted,
+        "chapters_inserted": chapters_inserted,
+        "exported_at": bundle.get("exported_at"),
+    }
+    await db.system_logs.insert_one({
+        "kind": "admin_import_bundle",
+        "at": datetime.now(timezone.utc).isoformat(),
+        **stats,
+    })
+    return stats
+
+
+
 @api.get("/admin/refresh-log")
 async def admin_refresh_log(_: dict = Depends(require_admin)):
     """Last 20 refresh runs (auto + manual)."""
