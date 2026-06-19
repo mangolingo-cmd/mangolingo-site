@@ -1132,43 +1132,108 @@ async def admin_fix_missing_covers(_: dict = Depends(require_admin)):
 
 @api.post("/admin/import-mangaspark-bundle")
 async def admin_import_mangaspark_bundle(_: dict = Depends(require_admin)):
-    """Load /app/backend/seed/mangaspark_export.json.gz and upsert into MongoDB.
-    Used to sync curated mangaspark data from preview to production."""
+    """Load /app/backend/seed/mangaspark_export.json.gz and bulk-upsert into MongoDB.
+    Runs in background to avoid proxy timeout. Poll /admin/import-bundle/status."""
     import gzip
     import json
+    from pymongo import ReplaceOne
+
     path = os.path.join(os.path.dirname(__file__), "seed", "mangaspark_export.json.gz")
     if not os.path.exists(path):
         raise HTTPException(404, f"Bundle not found at {path}")
+
+    # Read & parse synchronously (fast — only 2.5MB)
     with open(path, "rb") as f:
-        raw = gzip.decompress(f.read())
-    bundle = json.loads(raw)
+        bundle = json.loads(gzip.decompress(f.read()))
     titles = bundle.get("titles", [])
     episodes = bundle.get("episodes", [])
 
-    titles_upserted = 0
-    for t in titles:
-        await db.titles.update_one({"id": t["id"]}, {"$set": t}, upsert=True)
-        titles_upserted += 1
-
-    title_ids = {t["id"] for t in titles}
-    for tid in title_ids:
-        await db.episodes.delete_many({"title_id": tid})
-    chapters_inserted = 0
-    for ep in episodes:
-        await db.episodes.insert_one(ep)
-        chapters_inserted += 1
-
-    stats = {
-        "titles_upserted": titles_upserted,
-        "chapters_inserted": chapters_inserted,
-        "exported_at": bundle.get("exported_at"),
-    }
+    job_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
     await db.system_logs.insert_one({
         "kind": "admin_import_bundle",
-        "at": datetime.now(timezone.utc).isoformat(),
-        **stats,
+        "job_id": job_id,
+        "status": "running",
+        "at": now,
+        "started_at": now,
+        "titles_total": len(titles),
+        "episodes_total": len(episodes),
+        "titles_upserted": 0,
+        "chapters_inserted": 0,
+        "exported_at": bundle.get("exported_at"),
     })
-    return stats
+
+    async def _worker():
+        try:
+            # 1) Upsert titles in batches of 500 via bulk_write
+            BATCH = 500
+            done_t = 0
+            for i in range(0, len(titles), BATCH):
+                chunk = titles[i : i + BATCH]
+                ops = [ReplaceOne({"id": t["id"]}, t, upsert=True) for t in chunk]
+                if ops:
+                    await db.titles.bulk_write(ops, ordered=False)
+                done_t += len(chunk)
+                await db.system_logs.update_one(
+                    {"job_id": job_id}, {"$set": {"titles_upserted": done_t}}
+                )
+
+            # 2) Wipe any existing episodes for these titles (single bulk delete)
+            title_ids = [t["id"] for t in titles]
+            for i in range(0, len(title_ids), 500):
+                await db.episodes.delete_many({"title_id": {"$in": title_ids[i : i + 500]}})
+
+            # 3) Insert episodes in batches of 500
+            done_e = 0
+            for i in range(0, len(episodes), BATCH):
+                chunk = episodes[i : i + BATCH]
+                if chunk:
+                    await db.episodes.insert_many(chunk, ordered=False)
+                done_e += len(chunk)
+                await db.system_logs.update_one(
+                    {"job_id": job_id}, {"$set": {"chapters_inserted": done_e}}
+                )
+
+            await db.system_logs.update_one(
+                {"job_id": job_id},
+                {"$set": {
+                    "status": "done",
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                }},
+            )
+            logger.info(f"[import-bundle {job_id}] done titles={done_t} eps={done_e}")
+        except Exception as e:
+            logger.exception(f"[import-bundle {job_id}] failed")
+            await db.system_logs.update_one(
+                {"job_id": job_id},
+                {"$set": {
+                    "status": "failed",
+                    "error": str(e)[:500],
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                }},
+            )
+
+    asyncio.create_task(_worker())
+    return {
+        "status": "processing",
+        "job_id": job_id,
+        "titles_total": len(titles),
+        "episodes_total": len(episodes),
+        "poll_url": "/api/admin/import-bundle/status",
+    }
+
+
+@api.get("/admin/import-bundle/status")
+async def admin_import_bundle_status(_: dict = Depends(require_admin)):
+    """Latest bundle-import job status."""
+    log = await db.system_logs.find_one(
+        {"kind": "admin_import_bundle"},
+        {"_id": 0},
+        sort=[("started_at", -1)],
+    )
+    if not log:
+        return {"status": "idle"}
+    return log
 
 
 

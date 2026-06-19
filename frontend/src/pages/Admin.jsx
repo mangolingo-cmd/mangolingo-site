@@ -136,13 +136,40 @@ export default function Admin() {
   };
 
   const [maintBusy, setMaintBusy] = useState("");
+  const [bundleProgress, setBundleProgress] = useState(null);
 
-  const runMaintenance = async (kind, endpoint, infoMsg, fmtSuccess) => {
+  const pollBundleStatus = async () => {
+    const start = Date.now();
+    while (Date.now() - start < 15 * 60 * 1000) { // max 15 min
+      try {
+        const { data } = await api.get("/admin/import-bundle/status");
+        setBundleProgress(data);
+        if (data.status === "done") {
+          toast.success(`اكتمل الاستيراد: ${data.titles_upserted} عنواناً + ${data.chapters_inserted} فصلاً`);
+          load();
+          return;
+        }
+        if (data.status === "failed") {
+          toast.error(`فشل الاستيراد: ${data.error || "خطأ غير معروف"}`);
+          return;
+        }
+      } catch (e) { /* keep polling */ }
+      await new Promise((r) => setTimeout(r, 2500));
+    }
+  };
+
+  const runMaintenance = async (kind, endpoint, infoMsg, fmtSuccess, isAsync = false) => {
     if (!window.confirm(`تأكيد تشغيل: ${infoMsg}؟`)) return;
     setMaintBusy(kind);
     toast.info(infoMsg);
     try {
       const { data } = await api.post(endpoint, null, { timeout: 900000 });
+      if (isAsync && data.status === "processing") {
+        toast.info(`بدأت المهمة في الخلفية (job ${data.job_id?.slice(0, 8)})`);
+        setBundleProgress(data);
+        pollBundleStatus().finally(() => setMaintBusy(""));
+        return;
+      }
       toast.success(fmtSuccess(data));
       load();
     } catch (e) {
@@ -254,6 +281,7 @@ export default function Admin() {
               "/admin/import-mangaspark-bundle",
               "استيراد الـ 163 مانهوا العربية من الحزمة المرفقة بالكود",
               (d) => `استورد ${d.titles_upserted} عنواناً + ${d.chapters_inserted} فصلاً`,
+              true,
             )}
             disabled={!!maintBusy}
             className="bg-accent hover:bg-accent/90 text-black"
@@ -295,6 +323,31 @@ export default function Admin() {
           💡 الترتيب المقترح: <strong>1) استيراد الحزمة</strong> ←
           <strong> 2) تنظيف المكررات</strong> ← <strong>3) إصلاح الأغلفة</strong>
         </p>
+        {bundleProgress && bundleProgress.status && (
+          <div className="bg-secondary/40 border border-border rounded-lg p-3 mt-2 text-xs space-y-1" data-testid="bundle-progress">
+            <div className="flex items-center justify-between">
+              <span className="font-bold">
+                {bundleProgress.status === "running" && "⏳ جارٍ الاستيراد..."}
+                {bundleProgress.status === "done" && "✅ اكتمل الاستيراد"}
+                {bundleProgress.status === "failed" && "❌ فشل الاستيراد"}
+                {bundleProgress.status === "processing" && "⏳ بدأت المهمة..."}
+              </span>
+              {bundleProgress.job_id && (
+                <span className="text-muted-foreground">job {bundleProgress.job_id.slice(0, 8)}</span>
+              )}
+            </div>
+            {(bundleProgress.titles_total != null) && (
+              <div className="text-muted-foreground">
+                العناوين: {bundleProgress.titles_upserted ?? 0} / {bundleProgress.titles_total}
+                {" • "}
+                الفصول: {bundleProgress.chapters_inserted ?? 0} / {bundleProgress.episodes_total}
+              </div>
+            )}
+            {bundleProgress.error && (
+              <div className="text-destructive">{bundleProgress.error}</div>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="bg-[#0F111A] border border-border rounded-xl p-6 space-y-3" data-testid="mangaspark-refresh">
