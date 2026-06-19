@@ -1013,85 +1013,169 @@ async def admin_refresh_mangaspark(_: dict = Depends(require_admin)):
 # -------- Production maintenance endpoints (admin-only) --------
 @api.post("/admin/dedupe-titles")
 async def admin_dedupe_titles(_: dict = Depends(require_admin)):
-    """Merge duplicate titles (same source_slug) and remove stale empty placeholders."""
+    """Merge duplicate titles (same source_slug). Runs in background — poll
+    /admin/job-status?kind=admin_dedupe."""
     from collections import defaultdict
-    titles = await db.titles.find({}, {"_id": 0}).to_list(length=None)
-    groups: dict = defaultdict(list)
-    for t in titles:
-        slug = (t.get("source_slug") or "").strip().lower()
-        ttype = (t.get("type") or "").strip().lower()
-        title_norm = (t.get("title") or "").strip().lower()
-        key = (slug, ttype) if slug else (f"name:{title_norm}", ttype)
-        groups[key].append(t)
-    merged_titles = 0
-    moved_chapters = 0
-    dropped_chapters = 0
-    for _, items in groups.items():
-        if len(items) < 2:
-            continue
-        counts = []
-        for t in items:
-            cnt = await db.episodes.count_documents({"title_id": t["id"]})
-            counts.append((cnt, t))
-        counts.sort(key=lambda x: (-x[0], x[1].get("created_at", "")))
-        keeper = counts[0][1]
-        existing_keys = set()
-        async for ep in db.episodes.find({"title_id": keeper["id"]}, {"number": 1, "language": 1}):
-            existing_keys.add((ep.get("number"), ep.get("language", "ar")))
-        for _, dupe in counts[1:]:
-            async for ep in db.episodes.find({"title_id": dupe["id"]}):
-                k = (ep.get("number"), ep.get("language", "ar"))
-                if k in existing_keys:
-                    await db.episodes.delete_one({"_id": ep["_id"]})
-                    dropped_chapters += 1
-                else:
-                    await db.episodes.update_one({"_id": ep["_id"]}, {"$set": {"title_id": keeper["id"]}})
-                    existing_keys.add(k)
-                    moved_chapters += 1
-            await db.watchlist.update_many({"title_id": dupe["id"]}, {"$set": {"title_id": keeper["id"]}})
-            await db.reviews.update_many({"title_id": dupe["id"]}, {"$set": {"title_id": keeper["id"]}})
-            await db.reading_progress.update_many({"title_id": dupe["id"]}, {"$set": {"title_id": keeper["id"]}})
-            await db.titles.delete_one({"id": dupe["id"]})
-            merged_titles += 1
-    # Delete stale empty placeholders sharing a name with a populated title
-    titles2 = await db.titles.find({}, {"_id": 0}).to_list(length=None)
-    name_map: dict = {}
-    for t in titles2:
-        n = (t.get("title") or "").strip().lower()
-        if not n:
-            continue
-        cnt = await db.episodes.count_documents({"title_id": t["id"]})
-        name_map.setdefault(n, []).append((t["id"], cnt))
-    placeholders_deleted = 0
-    for _, lst in name_map.items():
-        if len(lst) < 2 or not any(c > 0 for _, c in lst):
-            continue
-        for tid, cnt in lst:
-            if cnt == 0:
-                await db.titles.delete_one({"id": tid})
-                await db.watchlist.delete_many({"title_id": tid})
-                await db.reviews.delete_many({"title_id": tid})
-                await db.reading_progress.delete_many({"title_id": tid})
-                placeholders_deleted += 1
-    stats = {
-        "merged_titles": merged_titles,
-        "placeholders_deleted": placeholders_deleted,
-        "moved_chapters": moved_chapters,
-        "dropped_duplicate_chapters": dropped_chapters,
-        "titles_remaining": await db.titles.count_documents({}),
-    }
+    from pymongo import DeleteOne, UpdateOne
+
+    job_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
     await db.system_logs.insert_one({
         "kind": "admin_dedupe",
-        "at": datetime.now(timezone.utc).isoformat(),
-        **stats,
+        "job_id": job_id,
+        "status": "running",
+        "at": now,
+        "started_at": now,
+        "merged_titles": 0,
+        "placeholders_deleted": 0,
+        "moved_chapters": 0,
+        "dropped_duplicate_chapters": 0,
     })
-    return stats
+
+    async def _worker():
+        try:
+            titles = await db.titles.find({}, {"_id": 0}).to_list(length=None)
+            groups: dict = defaultdict(list)
+            for t in titles:
+                slug = (t.get("source_slug") or "").strip().lower()
+                ttype = (t.get("type") or "").strip().lower()
+                title_norm = (t.get("title") or "").strip().lower()
+                key = (slug, ttype) if slug else (f"name:{title_norm}", ttype)
+                groups[key].append(t)
+
+            # Pre-count episodes for all duplicate-group titles in one $group aggregation
+            dupe_title_ids = [t["id"] for items in groups.values() if len(items) > 1 for t in items]
+            ep_counts: dict = {}
+            if dupe_title_ids:
+                async for row in db.episodes.aggregate([
+                    {"$match": {"title_id": {"$in": dupe_title_ids}}},
+                    {"$group": {"_id": "$title_id", "n": {"$sum": 1}}},
+                ]):
+                    ep_counts[row["_id"]] = row["n"]
+
+            merged_titles = 0
+            moved_chapters = 0
+            dropped_chapters = 0
+            BATCH = 500
+
+            for items in groups.values():
+                if len(items) < 2:
+                    continue
+                counts = [(ep_counts.get(t["id"], 0), t) for t in items]
+                counts.sort(key=lambda x: (-x[0], x[1].get("created_at", "")))
+                keeper = counts[0][1]
+
+                existing_keys = set()
+                async for ep in db.episodes.find(
+                    {"title_id": keeper["id"]}, {"number": 1, "language": 1}
+                ):
+                    existing_keys.add((ep.get("number"), ep.get("language", "ar")))
+
+                ep_ops: list = []
+                async def flush_ep_ops():
+                    nonlocal ep_ops
+                    if ep_ops:
+                        await db.episodes.bulk_write(ep_ops, ordered=False)
+                        ep_ops = []
+
+                for _, dupe in counts[1:]:
+                    async for ep in db.episodes.find(
+                        {"title_id": dupe["id"]}, {"_id": 1, "number": 1, "language": 1}
+                    ):
+                        k = (ep.get("number"), ep.get("language", "ar"))
+                        if k in existing_keys:
+                            ep_ops.append(DeleteOne({"_id": ep["_id"]}))
+                            dropped_chapters += 1
+                        else:
+                            ep_ops.append(UpdateOne(
+                                {"_id": ep["_id"]},
+                                {"$set": {"title_id": keeper["id"]}},
+                            ))
+                            existing_keys.add(k)
+                            moved_chapters += 1
+                        if len(ep_ops) >= BATCH:
+                            await flush_ep_ops()
+                    await db.watchlist.update_many({"title_id": dupe["id"]}, {"$set": {"title_id": keeper["id"]}})
+                    await db.reviews.update_many({"title_id": dupe["id"]}, {"$set": {"title_id": keeper["id"]}})
+                    await db.reading_progress.update_many({"title_id": dupe["id"]}, {"$set": {"title_id": keeper["id"]}})
+                    await db.titles.delete_one({"id": dupe["id"]})
+                    merged_titles += 1
+                await flush_ep_ops()
+                # progress
+                await db.system_logs.update_one(
+                    {"job_id": job_id},
+                    {"$set": {
+                        "merged_titles": merged_titles,
+                        "moved_chapters": moved_chapters,
+                        "dropped_duplicate_chapters": dropped_chapters,
+                    }},
+                )
+
+            # Delete stale empty placeholders sharing a name with a populated title
+            titles2 = await db.titles.find({}, {"_id": 0, "id": 1, "title": 1}).to_list(length=None)
+            ep_counts_all: dict = {}
+            async for row in db.episodes.aggregate([
+                {"$group": {"_id": "$title_id", "n": {"$sum": 1}}},
+            ]):
+                ep_counts_all[row["_id"]] = row["n"]
+
+            name_map: dict = {}
+            for t in titles2:
+                n = (t.get("title") or "").strip().lower()
+                if not n:
+                    continue
+                name_map.setdefault(n, []).append((t["id"], ep_counts_all.get(t["id"], 0)))
+
+            placeholders_deleted = 0
+            to_del: list = []
+            for _, lst in name_map.items():
+                if len(lst) < 2 or not any(c > 0 for _, c in lst):
+                    continue
+                for tid, cnt in lst:
+                    if cnt == 0:
+                        to_del.append(tid)
+            for i in range(0, len(to_del), 500):
+                chunk = to_del[i : i + 500]
+                await db.titles.delete_many({"id": {"$in": chunk}})
+                await db.watchlist.delete_many({"title_id": {"$in": chunk}})
+                await db.reviews.delete_many({"title_id": {"$in": chunk}})
+                await db.reading_progress.delete_many({"title_id": {"$in": chunk}})
+                placeholders_deleted += len(chunk)
+
+            titles_remaining = await db.titles.count_documents({})
+            await db.system_logs.update_one(
+                {"job_id": job_id},
+                {"$set": {
+                    "status": "done",
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                    "merged_titles": merged_titles,
+                    "placeholders_deleted": placeholders_deleted,
+                    "moved_chapters": moved_chapters,
+                    "dropped_duplicate_chapters": dropped_chapters,
+                    "titles_remaining": titles_remaining,
+                }},
+            )
+            logger.info(f"[dedupe {job_id}] done merged={merged_titles} ph={placeholders_deleted} remaining={titles_remaining}")
+        except Exception as e:
+            logger.exception(f"[dedupe {job_id}] failed")
+            await db.system_logs.update_one(
+                {"job_id": job_id},
+                {"$set": {"status": "failed", "error": str(e)[:500],
+                          "finished_at": datetime.now(timezone.utc).isoformat()}},
+            )
+
+    asyncio.create_task(_worker())
+    return {"status": "processing", "job_id": job_id, "poll_url": "/api/admin/job-status?kind=admin_dedupe"}
 
 
 @api.post("/admin/fix-missing-covers")
 async def admin_fix_missing_covers(_: dict = Depends(require_admin)):
     """For titles with empty cover_url but a known mangadex_id, query MangaDex
-    Cover API in batches and populate cover_url."""
+    Cover API in batches. Runs in background — poll /admin/job-status?kind=admin_fix_covers."""
+    from pymongo import UpdateOne
+
+    job_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
     missing = await db.titles.find(
         {
             "mangadex_id": {"$exists": True, "$nin": [None, ""]},
@@ -1099,35 +1183,93 @@ async def admin_fix_missing_covers(_: dict = Depends(require_admin)):
         },
         {"_id": 0, "id": 1, "mangadex_id": 1},
     ).to_list(length=None)
-    updated = 0
-    async with httpx.AsyncClient(timeout=20) as c:
-        for start in range(0, len(missing), 50):
-            batch = missing[start : start + 50]
-            params = [("manga[]", t["mangadex_id"]) for t in batch] + [("limit", 100)]
-            r = await c.get("https://api.mangadex.org/cover", params=params)
-            if r.status_code != 200:
-                continue
-            cov_by_mid: dict = {}
-            for item in r.json().get("data", []):
-                fn = item.get("attributes", {}).get("fileName")
-                if not fn:
-                    continue
-                for rel in item.get("relationships", []):
-                    if rel.get("type") == "manga" and rel["id"] not in cov_by_mid:
-                        cov_by_mid[rel["id"]] = (
-                            f"https://uploads.mangadex.org/covers/{rel['id']}/{fn}.512.jpg"
-                        )
-                        break
-            for t in batch:
-                url = cov_by_mid.get(t["mangadex_id"])
-                if url:
-                    await db.titles.update_one({"id": t["id"]}, {"$set": {"cover_url": url}})
-                    updated += 1
-            await asyncio.sleep(0.3)
-    remaining = await db.titles.count_documents(
-        {"$or": [{"cover_url": ""}, {"cover_url": None}, {"cover_url": {"$exists": False}}]}
+
+    await db.system_logs.insert_one({
+        "kind": "admin_fix_covers",
+        "job_id": job_id,
+        "status": "running",
+        "at": now,
+        "started_at": now,
+        "scanned": len(missing),
+        "covers_updated": 0,
+    })
+
+    async def _worker():
+        try:
+            updated = 0
+            async with httpx.AsyncClient(timeout=20) as c:
+                for start in range(0, len(missing), 50):
+                    batch = missing[start : start + 50]
+                    params = [("manga[]", t["mangadex_id"]) for t in batch] + [("limit", 100)]
+                    r = await c.get("https://api.mangadex.org/cover", params=params)
+                    if r.status_code != 200:
+                        continue
+                    cov_by_mid: dict = {}
+                    for item in r.json().get("data", []):
+                        fn = item.get("attributes", {}).get("fileName")
+                        if not fn:
+                            continue
+                        for rel in item.get("relationships", []):
+                            if rel.get("type") == "manga" and rel["id"] not in cov_by_mid:
+                                cov_by_mid[rel["id"]] = (
+                                    f"https://uploads.mangadex.org/covers/{rel['id']}/{fn}.512.jpg"
+                                )
+                                break
+                    ops = []
+                    for t in batch:
+                        url = cov_by_mid.get(t["mangadex_id"])
+                        if url:
+                            ops.append(UpdateOne({"id": t["id"]}, {"$set": {"cover_url": url}}))
+                    if ops:
+                        result = await db.titles.bulk_write(ops, ordered=False)
+                        updated += result.modified_count
+                    await db.system_logs.update_one(
+                        {"job_id": job_id},
+                        {"$set": {"covers_updated": updated, "progress": start + len(batch)}},
+                    )
+                    await asyncio.sleep(0.3)
+            still_missing = await db.titles.count_documents(
+                {"$or": [{"cover_url": ""}, {"cover_url": None}, {"cover_url": {"$exists": False}}]}
+            )
+            await db.system_logs.update_one(
+                {"job_id": job_id},
+                {"$set": {
+                    "status": "done",
+                    "covers_updated": updated,
+                    "still_missing": still_missing,
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                }},
+            )
+            logger.info(f"[fix-covers {job_id}] done updated={updated} still_missing={still_missing}")
+        except Exception as e:
+            logger.exception(f"[fix-covers {job_id}] failed")
+            await db.system_logs.update_one(
+                {"job_id": job_id},
+                {"$set": {"status": "failed", "error": str(e)[:500],
+                          "finished_at": datetime.now(timezone.utc).isoformat()}},
+            )
+
+    asyncio.create_task(_worker())
+    return {
+        "status": "processing",
+        "job_id": job_id,
+        "scanned": len(missing),
+        "poll_url": "/api/admin/job-status?kind=admin_fix_covers",
+    }
+
+
+@api.get("/admin/job-status")
+async def admin_job_status(kind: str, _: dict = Depends(require_admin)):
+    """Generic status poll for admin background jobs.
+    kind: admin_dedupe | admin_fix_covers | admin_import_bundle"""
+    if kind not in {"admin_dedupe", "admin_fix_covers", "admin_import_bundle"}:
+        raise HTTPException(400, "Invalid kind")
+    log = await db.system_logs.find_one(
+        {"kind": kind}, {"_id": 0}, sort=[("started_at", -1)]
     )
-    return {"covers_updated": updated, "still_missing": remaining, "scanned": len(missing)}
+    if not log:
+        return {"status": "idle"}
+    return log
 
 
 @api.post("/admin/import-mangaspark-bundle")
@@ -1219,17 +1361,15 @@ async def admin_import_mangaspark_bundle(_: dict = Depends(require_admin)):
         "job_id": job_id,
         "titles_total": len(titles),
         "episodes_total": len(episodes),
-        "poll_url": "/api/admin/import-bundle/status",
+        "poll_url": "/api/admin/job-status?kind=admin_import_bundle",
     }
 
 
 @api.get("/admin/import-bundle/status")
 async def admin_import_bundle_status(_: dict = Depends(require_admin)):
-    """Latest bundle-import job status."""
+    """Legacy status endpoint kept for backwards compat — prefer /admin/job-status."""
     log = await db.system_logs.find_one(
-        {"kind": "admin_import_bundle"},
-        {"_id": 0},
-        sort=[("started_at", -1)],
+        {"kind": "admin_import_bundle"}, {"_id": 0}, sort=[("started_at", -1)]
     )
     if not log:
         return {"status": "idle"}

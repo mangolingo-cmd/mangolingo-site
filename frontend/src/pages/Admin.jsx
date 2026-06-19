@@ -22,6 +22,31 @@ const EMPTY = {
   year: "",
 };
 
+function JobProgressCard({ label, data, testid, renderStats }) {
+  if (!data || !data.status) return null;
+  const statusLabel =
+    data.status === "running" || data.status === "processing"
+      ? "⏳ جارٍ التنفيذ..."
+      : data.status === "done"
+      ? "✅ اكتملت"
+      : data.status === "failed"
+      ? "❌ فشلت"
+      : data.status;
+  return (
+    <div
+      className="bg-secondary/40 border border-border rounded-lg p-3 mt-2 text-xs space-y-1"
+      data-testid={testid}
+    >
+      <div className="flex items-center justify-between">
+        <span className="font-bold">{label} — {statusLabel}</span>
+        {data.job_id && <span className="text-muted-foreground">job {data.job_id.slice(0, 8)}</span>}
+      </div>
+      <div className="text-muted-foreground">{renderStats(data)}</div>
+      {data.error && <div className="text-destructive">{data.error}</div>}
+    </div>
+  );
+}
+
 function EpisodesManager({ title }) {
   const isAnime = title.type === "anime";
   const [eps, setEps] = useState([]);
@@ -136,21 +161,21 @@ export default function Admin() {
   };
 
   const [maintBusy, setMaintBusy] = useState("");
-  const [bundleProgress, setBundleProgress] = useState(null);
+  const [jobProgress, setJobProgress] = useState({}); // { admin_dedupe: {...}, admin_fix_covers: {...}, admin_import_bundle: {...} }
 
-  const pollBundleStatus = async () => {
+  const pollJob = async (kind, fmtDone) => {
     const start = Date.now();
-    while (Date.now() - start < 15 * 60 * 1000) { // max 15 min
+    while (Date.now() - start < 30 * 60 * 1000) { // max 30 min
       try {
-        const { data } = await api.get("/admin/import-bundle/status");
-        setBundleProgress(data);
+        const { data } = await api.get("/admin/job-status", { params: { kind } });
+        setJobProgress((prev) => ({ ...prev, [kind]: data }));
         if (data.status === "done") {
-          toast.success(`اكتمل الاستيراد: ${data.titles_upserted} عنواناً + ${data.chapters_inserted} فصلاً`);
+          toast.success(fmtDone(data));
           load();
           return;
         }
         if (data.status === "failed") {
-          toast.error(`فشل الاستيراد: ${data.error || "خطأ غير معروف"}`);
+          toast.error(`فشلت المهمة: ${data.error || "خطأ غير معروف"}`);
           return;
         }
       } catch (e) { /* keep polling */ }
@@ -158,24 +183,25 @@ export default function Admin() {
     }
   };
 
-  const runMaintenance = async (kind, endpoint, infoMsg, fmtSuccess, isAsync = false) => {
+  const runMaintenance = async (kind, endpoint, infoMsg, jobKind, fmtDone) => {
     if (!window.confirm(`تأكيد تشغيل: ${infoMsg}؟`)) return;
     setMaintBusy(kind);
     toast.info(infoMsg);
     try {
-      const { data } = await api.post(endpoint, null, { timeout: 900000 });
-      if (isAsync && data.status === "processing") {
+      const { data } = await api.post(endpoint, null, { timeout: 30000 });
+      if (data.status === "processing") {
         toast.info(`بدأت المهمة في الخلفية (job ${data.job_id?.slice(0, 8)})`);
-        setBundleProgress(data);
-        pollBundleStatus().finally(() => setMaintBusy(""));
+        setJobProgress((prev) => ({ ...prev, [jobKind]: { ...data, status: "running" } }));
+        pollJob(jobKind, fmtDone).finally(() => setMaintBusy(""));
         return;
       }
-      toast.success(fmtSuccess(data));
-      load();
+      // Shouldn't happen now that everything is async, but keep a fallback
+      toast.success(fmtDone(data));
+      setMaintBusy("");
     } catch (e) {
       toast.error(fmtError(e.response?.data?.detail));
+      setMaintBusy("");
     }
-    setMaintBusy("");
   };
 
   const save = async () => {
@@ -280,8 +306,8 @@ export default function Admin() {
               "import-bundle",
               "/admin/import-mangaspark-bundle",
               "استيراد الـ 163 مانهوا العربية من الحزمة المرفقة بالكود",
-              (d) => `استورد ${d.titles_upserted} عنواناً + ${d.chapters_inserted} فصلاً`,
-              true,
+              "admin_import_bundle",
+              (d) => `اكتمل الاستيراد: ${d.titles_upserted} عنواناً + ${d.chapters_inserted} فصلاً`,
             )}
             disabled={!!maintBusy}
             className="bg-accent hover:bg-accent/90 text-black"
@@ -295,7 +321,8 @@ export default function Admin() {
               "dedupe",
               "/admin/dedupe-titles",
               "دمج العناوين المكررة وحذف المدخلات الفارغة",
-              (d) => `دُمج ${d.merged_titles} • حُذف ${d.placeholders_deleted} فارغ • تبقى ${d.titles_remaining} عنواناً`,
+              "admin_dedupe",
+              (d) => `دُمج ${d.merged_titles} • حُذف ${d.placeholders_deleted} فارغ • تبقى ${d.titles_remaining}`,
             )}
             disabled={!!maintBusy}
             variant="secondary"
@@ -309,7 +336,8 @@ export default function Admin() {
               "covers",
               "/admin/fix-missing-covers",
               "إصلاح الأغلفة الناقصة عبر MangaDex Cover API",
-              (d) => `أُصلح ${d.covers_updated} غلافاً من أصل ${d.scanned}، تبقى ${d.still_missing} بدون غلاف`,
+              "admin_fix_covers",
+              (d) => `أُصلح ${d.covers_updated} من أصل ${d.scanned}، تبقى ${d.still_missing} بدون غلاف`,
             )}
             disabled={!!maintBusy}
             variant="secondary"
@@ -323,30 +351,42 @@ export default function Admin() {
           💡 الترتيب المقترح: <strong>1) استيراد الحزمة</strong> ←
           <strong> 2) تنظيف المكررات</strong> ← <strong>3) إصلاح الأغلفة</strong>
         </p>
-        {bundleProgress && bundleProgress.status && (
-          <div className="bg-secondary/40 border border-border rounded-lg p-3 mt-2 text-xs space-y-1" data-testid="bundle-progress">
-            <div className="flex items-center justify-between">
-              <span className="font-bold">
-                {bundleProgress.status === "running" && "⏳ جارٍ الاستيراد..."}
-                {bundleProgress.status === "done" && "✅ اكتمل الاستيراد"}
-                {bundleProgress.status === "failed" && "❌ فشل الاستيراد"}
-                {bundleProgress.status === "processing" && "⏳ بدأت المهمة..."}
-              </span>
-              {bundleProgress.job_id && (
-                <span className="text-muted-foreground">job {bundleProgress.job_id.slice(0, 8)}</span>
-              )}
-            </div>
-            {(bundleProgress.titles_total != null) && (
-              <div className="text-muted-foreground">
-                العناوين: {bundleProgress.titles_upserted ?? 0} / {bundleProgress.titles_total}
-                {" • "}
-                الفصول: {bundleProgress.chapters_inserted ?? 0} / {bundleProgress.episodes_total}
-              </div>
+
+        {/* Per-job progress cards */}
+        {jobProgress.admin_import_bundle && (
+          <JobProgressCard
+            label="استيراد الحزمة"
+            data={jobProgress.admin_import_bundle}
+            testid="bundle-progress"
+            renderStats={(d) => (
+              <>العناوين: {d.titles_upserted ?? 0} / {d.titles_total ?? "?"}{" • "}
+                الفصول: {d.chapters_inserted ?? 0} / {d.episodes_total ?? "?"}</>
             )}
-            {bundleProgress.error && (
-              <div className="text-destructive">{bundleProgress.error}</div>
+          />
+        )}
+        {jobProgress.admin_dedupe && (
+          <JobProgressCard
+            label="تنظيف المكررات"
+            data={jobProgress.admin_dedupe}
+            testid="dedupe-progress"
+            renderStats={(d) => (
+              <>دُمج: {d.merged_titles ?? 0}{" • "}فصول منقولة: {d.moved_chapters ?? 0}
+                {" • "}فصول مكررة محذوفة: {d.dropped_duplicate_chapters ?? 0}
+                {d.placeholders_deleted ? ` • مدخلات فارغة محذوفة: ${d.placeholders_deleted}` : ""}
+                {d.titles_remaining != null ? ` • تبقى ${d.titles_remaining}` : ""}</>
             )}
-          </div>
+          />
+        )}
+        {jobProgress.admin_fix_covers && (
+          <JobProgressCard
+            label="إصلاح الأغلفة"
+            data={jobProgress.admin_fix_covers}
+            testid="covers-progress"
+            renderStats={(d) => (
+              <>أُصلح: {d.covers_updated ?? 0} / {d.scanned ?? "?"}
+                {d.still_missing != null ? ` • متبقي بدون غلاف: ${d.still_missing}` : ""}</>
+            )}
+          />
         )}
       </section>
 
