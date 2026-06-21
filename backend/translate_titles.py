@@ -11,7 +11,14 @@ load_dotenv("/app/backend/.env")
 
 from motor.motor_asyncio import AsyncIOMotorClient
 import httpx
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+# Lazy import (this script is only run manually for one-off translations).
+# Keep it out of the global namespace so deploy environments without the
+# emergentintegrations index URL aren't forced to install it.
+try:
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+except ImportError:  # pragma: no cover
+    LlmChat = None
+    UserMessage = None
 
 EMERGENT_LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
 MONGO_URL = os.environ["MONGO_URL"]
