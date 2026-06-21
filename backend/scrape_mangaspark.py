@@ -71,7 +71,11 @@ POPULAR_SLUGS = [
     "the-s-classes-that-i-raised",
     "dungeon-reset",
     "top-tier-providence-secretly-cultivate-for-a-thousand-years",
-    "the-god-of-high-school"
+    "the-god-of-high-school",
+    "bleach-official-colored",
+    "dragon-ball-super",
+    "boruto-naruto-next-generations",
+    "one-piece"
 ]
 
 HEADERS = {
