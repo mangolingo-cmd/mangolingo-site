@@ -19,7 +19,7 @@ from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request, UploadF
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 # -------- Config --------
 MONGO_URL = os.environ["MONGO_URL"]
@@ -58,6 +58,7 @@ class TitleIn(BaseModel):
     type: str  # anime | manhwa | manga
     title: str
     title_ar: Optional[str] = ""
+    aliases: List[str] = []   # أسماء بديلة: إنجليزي رسمي، روماجي، اختصارات...
     synopsis: str = ""
     cover_url: str = ""
     banner_url: Optional[str] = ""
@@ -75,8 +76,26 @@ class WatchlistIn(BaseModel):
     title_id: str
     status: str  # watching | completed | plan | dropped | favorite
 
+from better_profanity import profanity
+
+profanity.load_censor_words()  # القائمة الإنجليزية الجاهزة
+
+# ضيف هنا كلمات إضافية بنفسك (عربي، لهجات محلية، أو أي كلمة إنجليزية ناقصة)
+CUSTOM_BANNED_WORDS = [
+    # مثال: "كلمة_سيئة_هنا",
+]
+if CUSTOM_BANNED_WORDS:
+    profanity.add_censor_words(CUSTOM_BANNED_WORDS)
+
 class MessageIn(BaseModel):
     content: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("content")
+    @classmethod
+    def no_banned_words(cls, v: str) -> str:
+        if profanity.contains_profanity(v):
+            raise ValueError("الرسالة تحتوي على كلمات غير مسموحة")
+        return v
 
 class ProfileUpdate(BaseModel):
     name: Optional[str] = None
@@ -202,6 +221,13 @@ async def update_me(data: ProfileUpdate, user: dict = Depends(get_current_user))
     fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0})
     return public_user(fresh)
 
+@api.get("/users/{uid}")
+async def get_public_profile(uid: str):
+    user = await db.users.find_one({"id": uid}, {"_id": 0})
+    if not user:
+        raise HTTPException(404, "المستخدم غير موجود")
+    return public_user(user)
+
 # -------- Titles --------
 @api.get("/titles")
 async def list_titles(type: Optional[str] = None, q: Optional[str] = None, ar_only: bool = False, genre: Optional[str] = None, page: int = 1, limit: int = 30):
@@ -210,10 +236,19 @@ async def list_titles(type: Optional[str] = None, q: Optional[str] = None, ar_on
     if type:
         query["type"] = type
     if q:
-        query["$or"] = [
-            {"title": {"$regex": q, "$options": "i"}},
-            {"title_ar": {"$regex": q, "$options": "i"}},
-        ]
+        exact_query = {**query, "$or": [
+            {"title": {"$regex": f"^{q}$", "$options": "i"}},
+              {"title_ar": {"$regex": f"^{q}$", "$options": "i"}},
+          {"aliases": {"$regex": f"^{q}$", "$options": "i"}},
+      ]}
+        if await db.titles.count_documents(exact_query) > 0:
+            query = exact_query
+        else:
+            query["$or"] = [
+                {"title": {"$regex": q, "$options": "i"}},
+              {"title_ar": {"$regex": q, "$options": "i"}},
+              {"aliases": {"$regex": q, "$options": "i"}},
+          ]
     if ar_only:
         query["has_ar"] = True
     if genre:

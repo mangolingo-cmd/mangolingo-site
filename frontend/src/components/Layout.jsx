@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Outlet, NavLink, Link, useNavigate } from "react-router-dom";
+import { Outlet, NavLink, Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import api from "@/api";
 import { t as tr, dirFor } from "@/lib/i18n";
@@ -29,6 +29,8 @@ const buildNav = (locale, isGuest) => {
 export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isReader = /\/episode\//.test(location.pathname);
   const [unread, setUnread] = useState(0);
   const [notifs, setNotifs] = useState([]);
   const locale = user?.locale || "ar";
@@ -73,6 +75,7 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-[#050505] text-foreground">
       {/* Top nav */}
+      {!isReader && (
       <header className="sticky top-0 z-40 glass-strong border-b border-border" data-testid="top-nav">
         <div className="max-w-7xl mx-auto flex items-center gap-6 px-4 sm:px-6 py-3">
           <Link to="/" className="flex items-center gap-2 font-display text-2xl" data-testid="nav-logo">
@@ -210,8 +213,10 @@ export default function Layout() {
           ))}
         </nav>
       </header>
+      )}
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+      <main className={isReader ? "max-w-5xl mx-auto px-2 sm:px-4 py-2" : "max-w-7xl mx-auto px-4 sm:px-6 py-6"}>
+        {!isReader && (
         <ins
   className="adsbygoogle"
   style={{ display: "block" }}
@@ -219,9 +224,11 @@ export default function Layout() {
   data-ad-client="ca-pub-5406621661801119"
   data-ad-slot="4297437849"
 ></ins>
+        )}
         <Outlet />
       </main>
 
+      {!isReader && (
       <footer className="border-t border-border mt-8 py-6 text-center text-xs text-muted-foreground" data-testid="site-footer">
         <div className="flex items-center justify-center gap-4 flex-wrap">
           <Link to="/privacy" className="hover:text-primary" data-testid="footer-privacy">سياسة الخصوصية</Link>
@@ -231,6 +238,7 @@ export default function Layout() {
           <span>© 2026 MangaVerse</span>
         </div>
       </footer>
+      )}
     </div>
   );
 }
