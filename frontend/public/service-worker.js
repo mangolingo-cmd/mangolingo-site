@@ -1,7 +1,7 @@
 // MangaVerse — minimal service worker for installability + offline shell.
 // Strategy: network-first for HTML/API, cache-first for static assets.
 
-const CACHE = "mangaverse-v1";
+const CACHE = "mangaverse-v2";
 const SHELL = ["/", "/manifest.json", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -18,6 +18,38 @@ self.addEventListener("activate", (event) => {
     )
   );
   self.clients.claim();
+});
+
+// Handle messages from the page (e.g., to show a notification when a new chapter
+// is detected via in-app polling — the page calls navigator.serviceWorker.controller.postMessage).
+self.addEventListener("message", (event) => {
+  const data = event.data || {};
+  if (data.type === "show-notification") {
+    const title = data.title || "MangaVerse";
+    const options = {
+      body: data.body || "",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      tag: data.tag || "new-chapter",
+      data: { url: data.url || "/" },
+      dir: "rtl",
+      lang: "ar",
+    };
+    event.waitUntil(self.registration.showNotification(title, options));
+  }
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+      for (const w of wins) {
+        if (w.url.includes(url) && "focus" in w) return w.focus();
+      }
+      return self.clients.openWindow ? self.clients.openWindow(url) : null;
+    })
+  );
 });
 
 self.addEventListener("fetch", (event) => {

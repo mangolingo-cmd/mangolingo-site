@@ -44,14 +44,38 @@ export default function Layout() {
 
   useEffect(() => {
     if (!user) return;
+    // Ask permission for desktop notifications once
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+    let lastSeenIds = new Set();
     const tick = async () => {
       try {
         const { data } = await api.get("/notifications/unread_count");
         setUnread(data.count);
-      } catch (e) { console.error("unread count failed", e); }
+        // Poll the latest notifications and push any unseen 'new_chapter' to the SW
+        const fresh = await api.get("/notifications");
+        const unseen = (fresh.data || []).filter(
+          (n) => n.type === "new_chapter" && !n.read && !lastSeenIds.has(n.id)
+        );
+        if (unseen.length && navigator.serviceWorker?.controller && Notification.permission === "granted") {
+          for (const n of unseen.slice(0, 3)) {
+            const p = n.payload || {};
+            navigator.serviceWorker.controller.postMessage({
+              type: "show-notification",
+              title: `فصل جديد: ${p.title_name || ""}`,
+              body: `صدر ${p.language === "ar" ? "الفصل" : "Chapter"} ${p.episode_number}`,
+              tag: `new-chapter-${n.id}`,
+              url: `/title/${p.title_id}/episode/${p.episode_id}`,
+            });
+          }
+        }
+        // Cap memory usage
+        lastSeenIds = new Set((fresh.data || []).map((n) => n.id).slice(0, 50));
+      } catch (e) { console.error("notifications poll failed", e); }
     };
     tick();
-    const id = setInterval(tick, 8000);
+    const id = setInterval(tick, 30000);
     return () => clearInterval(id);
   }, [user]);
 

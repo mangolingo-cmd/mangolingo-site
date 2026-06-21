@@ -22,6 +22,8 @@ export default function Home() {
   const [type, setType] = useState("all");
   const [arOnly, setArOnly] = useState(false);
   const [genre, setGenre] = useState("");
+  const [sortBy, setSortBy] = useState("newest");
+  const [statusFilter, setStatusFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -40,6 +42,8 @@ export default function Home() {
       if (q) params.q = q;
       if (arOnly) params.ar_only = true;
       if (genre) params.genre = genre;
+      if (sortBy) params.sort_by = sortBy;
+      if (statusFilter) params.status = statusFilter;
       const { data } = await api.get("/titles", { params });
       setTitles(data.items || []);
       setTotalPages(data.total_pages || 1);
@@ -50,13 +54,13 @@ export default function Home() {
   };
 
   // Reset to page 1 when filters change
-  useEffect(() => { setPage(1); }, [q, type, arOnly, genre]);
+  useEffect(() => { setPage(1); }, [q, type, arOnly, genre, sortBy, statusFilter]);
 
   useEffect(() => {
     const id = setTimeout(load, 200);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, type, arOnly, genre, page]);
+  }, [q, type, arOnly, genre, sortBy, statusFilter, page]);
 
   return (
     <div className="space-y-8" data-testid="home-page">
@@ -107,6 +111,27 @@ export default function Home() {
           >
             {t("ar_only")} {arOnly ? "✓" : ""}
           </button>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="bg-[#0F111A] border border-border text-sm rounded-md px-3 py-2 font-bold text-muted-foreground hover:text-foreground transition"
+            data-testid="sort-by-select"
+          >
+            <option value="newest">الأحدث</option>
+            <option value="rating">الأعلى تقييماً</option>
+            <option value="views">الأكثر مشاهدة</option>
+          </select>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="bg-[#0F111A] border border-border text-sm rounded-md px-3 py-2 font-bold text-muted-foreground hover:text-foreground transition"
+            data-testid="status-filter-select"
+          >
+            <option value="">كل الحالات</option>
+            <option value="ongoing">مستمر</option>
+            <option value="completed">منتهي</option>
+            <option value="hiatus">متوقف مؤقتاً</option>
+          </select>
         </div>
 
         {/* Genre chips */}

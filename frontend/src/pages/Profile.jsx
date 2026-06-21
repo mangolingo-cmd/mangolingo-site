@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { BookmarkX } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_LABEL = {
@@ -27,15 +28,27 @@ export default function Profile() {
   const [edit, setEdit] = useState({ name: "", bio: "", avatar: "" });
 
   const load = async () => {
-    const uid = id || user.id;
+    const uid = id || user?.id;
+    if (!uid) return;
     const { data } = await api.get(`/users/${uid}`);
     setTarget(data);
     setEdit({ name: data.name, bio: data.bio || "", avatar: data.avatar || "" });
-    if (isMe) {
+    if (isMe && user) {
       const wl = await api.get("/watchlist");
       setWatchlist(wl.data.filter((e) => e.title));
     } else {
       setWatchlist([]);
+    }
+  };
+
+  const unfollow = async (titleId) => {
+    if (!window.confirm("إزالة هذا العنوان من قائمتك؟")) return;
+    try {
+      await api.delete(`/watchlist/${titleId}`);
+      setWatchlist((arr) => arr.filter((e) => e.title_id !== titleId));
+      toast.success("تمت الإزالة من القائمة");
+    } catch (e) {
+      toast.error(fmtError(e.response?.data?.detail));
     }
   };
 
@@ -98,12 +111,22 @@ export default function Profile() {
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
                     {byStatus(k).map((e) => (
-                      <Link key={e.title_id} to={`/title/${e.title_id}`} className="block rounded-lg overflow-hidden bg-[#0F111A] card-hover">
-                        <div className="aspect-[2/3] bg-secondary">
-                          {e.title?.cover_url && <img src={e.title.cover_url} alt="" className="w-full h-full object-cover" />}
-                        </div>
-                        <div className="p-2"><div className="font-bold text-sm line-clamp-2">{e.title?.title_ar || e.title?.title}</div></div>
-                      </Link>
+                      <div key={e.title_id} className="relative rounded-lg overflow-hidden bg-[#0F111A] card-hover group" data-testid={`wl-card-${e.title_id}`}>
+                        <Link to={`/title/${e.title_id}`} className="block">
+                          <div className="aspect-[2/3] bg-secondary">
+                            {e.title?.cover_url && <img src={e.title.cover_url} alt="" className="w-full h-full object-cover" />}
+                          </div>
+                          <div className="p-2"><div className="font-bold text-sm line-clamp-2">{e.title?.title_ar || e.title?.title}</div></div>
+                        </Link>
+                        <button
+                          onClick={() => unfollow(e.title_id)}
+                          className="absolute top-2 end-2 bg-black/80 hover:bg-destructive text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition shadow-lg"
+                          aria-label="إزالة من القائمة"
+                          data-testid={`wl-unfollow-${e.title_id}`}
+                        >
+                          <BookmarkX className="w-4 h-4" />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )}

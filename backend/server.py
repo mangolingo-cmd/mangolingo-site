@@ -221,16 +221,12 @@ async def update_me(data: ProfileUpdate, user: dict = Depends(get_current_user))
     fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0})
     return public_user(fresh)
 
-@api.get("/users/{uid}")
-async def get_public_profile(uid: str):
-    user = await db.users.find_one({"id": uid}, {"_id": 0})
-    if not user:
-        raise HTTPException(404, "المستخدم غير موجود")
-    return public_user(user)
+# Note: public GET /api/users/{uid} is declared further below — AFTER /users/search —
+# to prevent route shadowing of the static `search` path.
 
 # -------- Titles --------
 @api.get("/titles")
-async def list_titles(type: Optional[str] = None, q: Optional[str] = None, ar_only: bool = False, genre: Optional[str] = None, page: int = 1, limit: int = 30):
+async def list_titles(type: Optional[str] = None, q: Optional[str] = None, ar_only: bool = False, genre: Optional[str] = None, status: Optional[str] = None, sort_by: str = "newest", page: int = 1, limit: int = 30):
     # Exclude titles known to have no available chapters
     query = {"has_chapters": {"$ne": False}}
     if type:
@@ -253,11 +249,19 @@ async def list_titles(type: Optional[str] = None, q: Optional[str] = None, ar_on
         query["has_ar"] = True
     if genre:
         query["genres"] = genre
+    if status:
+        query["status"] = status
     page = max(1, page)
     limit = max(1, min(60, limit))
     skip = (page - 1) * limit
     total = await db.titles.count_documents(query)
-    items = await db.titles.find(query, {"_id": 0}).sort([("has_ar", -1), ("created_at", -1)]).skip(skip).limit(limit).to_list(limit)
+    # Sort options: newest (created_at desc), rating (rating_avg desc), views (views_count desc)
+    sort_spec = {
+        "rating": [("rating_avg", -1), ("rating_count", -1)],
+        "views": [("views_count", -1), ("created_at", -1)],
+        "newest": [("has_ar", -1), ("created_at", -1)],
+    }.get(sort_by, [("has_ar", -1), ("created_at", -1)])
+    items = await db.titles.find(query, {"_id": 0}).sort(sort_spec).skip(skip).limit(limit).to_list(limit)
     return {
         "items": items,
         "total": total,
@@ -283,6 +287,10 @@ async def get_title(tid: str):
     t = await db.titles.find_one({"id": tid}, {"_id": 0})
     if not t:
         raise HTTPException(404, "العنوان غير موجود")
+    # Increment view counter (fire-and-forget)
+    async def _bump():
+        await db.titles.update_one({"id": tid}, {"$inc": {"views_count": 1}})
+    asyncio.create_task(_bump())
     return t
 
 @api.post("/titles")
@@ -302,8 +310,15 @@ async def create_title(data: TitleIn, _: dict = Depends(require_admin)):
     return doc
 
 @api.patch("/titles/{tid}")
-async def update_title(tid: str, data: TitleIn, _: dict = Depends(require_admin)):
-    res = await db.titles.update_one({"id": tid}, {"$set": data.model_dump()})
+async def update_title(tid: str, data: dict, _: dict = Depends(require_admin)):
+    """Partial title update. Accepts any subset of title fields including 'status'
+    so admins can toggle a manga between 'ongoing'/'completed'/'hiatus' from the UI."""
+    allowed = {"title", "title_ar", "aliases", "synopsis", "cover_url", "genres",
+               "status", "year", "type", "has_ar", "has_chapters"}
+    update = {k: v for k, v in (data or {}).items() if k in allowed}
+    if not update:
+        raise HTTPException(400, "لا توجد حقول قابلة للتعديل")
+    res = await db.titles.update_one({"id": tid}, {"$set": update})
     if res.matched_count == 0:
         raise HTTPException(404, "العنوان غير موجود")
     return await db.titles.find_one({"id": tid}, {"_id": 0})
@@ -380,6 +395,12 @@ async def set_watchlist(data: WatchlistIn, user: dict = Depends(get_current_user
 async def remove_watchlist(title_id: str, user: dict = Depends(get_current_user)):
     await db.watchlist.delete_one({"user_id": user["id"], "title_id": title_id})
     return {"ok": True}
+
+@api.get("/watchlist/{title_id}/check")
+async def check_watchlist(title_id: str, user: dict = Depends(get_current_user)):
+    """Returns {following: true/false, status: '...'} for the current user + given title."""
+    w = await db.watchlist.find_one({"user_id": user["id"], "title_id": title_id}, {"_id": 0})
+    return {"following": bool(w), "status": w.get("status") if w else None}
 
 # -------- Users / Friends --------
 @api.get("/users/search")
@@ -531,11 +552,92 @@ async def post_message(room_id: str, data: MessageIn, user: dict = Depends(get_c
         "sender_name": user["name"],
         "sender_avatar": user.get("avatar") or "",
         "content": data.content,
+        "edited": False,
+        "reactions": {},
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.messages.insert_one(msg)
     msg.pop("_id", None)
+    # Welcome bot: when a brand-new user posts their first message in lobby, the
+    # bot replies once to make them feel at home.
+    if room_id == "lobby":
+        prior = await db.messages.count_documents({"sender_id": user["id"], "room_id": "lobby"})
+        if prior == 1:
+            bot = {
+                "id": str(uuid.uuid4()),
+                "room_id": "lobby",
+                "sender_id": "bot",
+                "sender_name": "MangaBot",
+                "sender_avatar": "",
+                "content": f"أهلاً {user.get('name','صديقي')}! 👋 مرحباً بك في الردهة. تقدر تناقش أعمالك المفضلة وتلتقي بعشاق الأنمي والمانجا. استمتع! 🎉",
+                "edited": False,
+                "reactions": {},
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "is_bot": True,
+            }
+            await db.messages.insert_one(bot)
     return msg
+
+
+class MessageEditIn(BaseModel):
+    content: str
+
+@api.patch("/messages/{mid}")
+async def edit_message(mid: str, data: MessageEditIn, user: dict = Depends(get_current_user)):
+    """Allow a user to edit their own message; bots/system messages can't be edited."""
+    msg = await db.messages.find_one({"id": mid})
+    if not msg:
+        raise HTTPException(404, "الرسالة غير موجودة")
+    if msg.get("sender_id") != user["id"]:
+        raise HTTPException(403, "تقدر تعدّل رسائلك فقط")
+    if not data.content.strip():
+        raise HTTPException(400, "محتوى الرسالة فارغ")
+    await db.messages.update_one(
+        {"id": mid},
+        {"$set": {
+            "content": data.content,
+            "edited": True,
+            "edited_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    return await db.messages.find_one({"id": mid}, {"_id": 0})
+
+@api.delete("/messages/{mid}")
+async def delete_message(mid: str, user: dict = Depends(get_current_user)):
+    """Sender OR admin can delete a message."""
+    msg = await db.messages.find_one({"id": mid})
+    if not msg:
+        raise HTTPException(404, "الرسالة غير موجودة")
+    if msg.get("sender_id") != user["id"] and user.get("role") != "admin":
+        raise HTTPException(403, "غير مصرح")
+    await db.messages.delete_one({"id": mid})
+    return {"ok": True}
+
+
+class ReactionIn(BaseModel):
+    emoji: str
+
+@api.post("/messages/{mid}/react")
+async def react_message(mid: str, data: ReactionIn, user: dict = Depends(get_current_user)):
+    """Toggle an emoji reaction on a message. reactions = { '👍': [user_id, ...] }."""
+    emoji = (data.emoji or "").strip()
+    if not emoji or len(emoji) > 8:
+        raise HTTPException(400, "إيموجي غير صالح")
+    msg = await db.messages.find_one({"id": mid})
+    if not msg:
+        raise HTTPException(404, "الرسالة غير موجودة")
+    reactions = msg.get("reactions") or {}
+    voters = reactions.get(emoji, [])
+    if user["id"] in voters:
+        voters = [v for v in voters if v != user["id"]]
+    else:
+        voters.append(user["id"])
+    if voters:
+        reactions[emoji] = voters
+    else:
+        reactions.pop(emoji, None)
+    await db.messages.update_one({"id": mid}, {"$set": {"reactions": reactions}})
+    return {"reactions": reactions}
 
 # -------- DM helpers --------
 @api.get("/dm/{uid}/room")
@@ -592,6 +694,42 @@ async def read_all(user: dict = Depends(get_current_user)):
     await db.notifications.update_many({"user_id": user["id"], "read": False}, {"$set": {"read": True}})
     return {"ok": True}
 
+
+# -------- Notification fan-out helper (used by scrapers / chapter creation) --------
+async def notify_followers_new_chapter(title: dict, episode: dict):
+    """Insert a 'new_chapter' notification for every user that has this title
+    in their watchlist. Called whenever a new chapter is imported / created.
+    Frontend SW polls /notifications and shows a desktop Notification."""
+    if not title or not episode:
+        return
+    title_id = title.get("id")
+    followers = await db.watchlist.find({"title_id": title_id}, {"user_id": 1, "_id": 0}).to_list(length=None)
+    if not followers:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    payload = {
+        "title_id": title_id,
+        "title_name": title.get("title_ar") or title.get("title"),
+        "cover_url": title.get("cover_url"),
+        "episode_id": episode.get("id"),
+        "episode_number": episode.get("number"),
+        "episode_name": episode.get("name"),
+        "language": episode.get("language"),
+    }
+    docs = [
+        {
+            "id": str(uuid.uuid4()),
+            "user_id": f["user_id"],
+            "type": "new_chapter",
+            "payload": payload,
+            "read": False,
+            "created_at": now,
+        }
+        for f in followers
+    ]
+    if docs:
+        await db.notifications.insert_many(docs, ordered=False)
+
 # -------- Episodes / Chapters --------
 class EpisodeIn(BaseModel):
     number: float
@@ -613,7 +751,14 @@ async def list_episodes(tid: str, lang: str = "en"):
         query = {"title_id": tid, "$or": [{"language": "en"}, {"language": {"$exists": False}}]}
     else:
         query = {"title_id": tid, "language": lang}
-    items = await db.episodes.find(query, {"_id": 0}).sort("number", 1).to_list(5000)
+    # Numeric ordering (1, 2, 3, ... 10, 11) using collation — prevents lexicographic
+    # jumps like 1, 10, 11, ... 2, 20.
+    items = (
+        await db.episodes.find(query, {"_id": 0})
+        .collation({"locale": "en_US", "numericOrdering": True})
+        .sort("number", 1)
+        .to_list(5000)
+    )
     return items
 
 @api.get("/titles/{tid}/languages")
@@ -674,6 +819,9 @@ async def create_episode(tid: str, data: EpisodeIn, _: dict = Depends(require_ad
     }
     await db.episodes.insert_one(doc)
     doc.pop("_id", None)
+    # Notify all watchlist followers about the new chapter
+    title = await db.titles.find_one({"id": tid}, {"_id": 0})
+    asyncio.create_task(notify_followers_new_chapter(title, doc))
     return doc
 
 @api.delete("/titles/{tid}/episodes/{eid}")

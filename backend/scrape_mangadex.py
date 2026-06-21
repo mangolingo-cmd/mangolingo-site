@@ -205,7 +205,7 @@ async def fetch_chapters(client: httpx.AsyncClient, manga_id: str) -> list[dict]
         num_str = attrs.get("chapter") or "0"
         try:
             num = float(num_str)
-        except:
+        except (ValueError, TypeError):
             continue
         if num not in seen:
             seen[num] = True
@@ -219,12 +219,33 @@ async def fetch_chapters(client: httpx.AsyncClient, manga_id: str) -> list[dict]
     return result
 
 
+MIN_VALID_PAGES = 3
+
+
+async def _request_with_retry(client: httpx.AsyncClient, url: str, *, max_attempts: int = 4, **kw):
+    """GET with exponential backoff (0.5s, 1s, 2s, 4s). Returns Response or raises."""
+    last_exc = None
+    for attempt in range(max_attempts):
+        try:
+            r = await client.get(url, **kw)
+            if r.status_code >= 500 or r.status_code == 429:
+                raise httpx.HTTPStatusError(f"http {r.status_code}", request=r.request, response=r)
+            return r
+        except Exception as e:
+            last_exc = e
+            if attempt == max_attempts - 1:
+                break
+            await asyncio.sleep(0.5 * (2 ** attempt))
+    raise last_exc if last_exc else RuntimeError("retry failed")
+
+
 async def fetch_chapter_pages(client: httpx.AsyncClient, chapter_id: str) -> list[str]:
     try:
-        r = await client.get(
+        r = await _request_with_retry(
+            client,
             f"{API}/at-home/server/{chapter_id}",
             headers=HEADERS,
-            timeout=30
+            timeout=30,
         )
         if r.status_code != 200:
             return []
@@ -235,8 +256,12 @@ async def fetch_chapter_pages(client: httpx.AsyncClient, chapter_id: str) -> lis
         pages = ch_data.get("data", [])
 
         urls = [f"{base_url}/data/{hash_}/{p}" for p in pages]
+        # Validate: must be ≥ MIN_VALID_PAGES and all https URLs
+        if len(urls) < MIN_VALID_PAGES or not all(u.startswith("http") for u in urls):
+            return []
         return urls
     except Exception as e:
+        print(f"      ! pages fetch error after retries: {e}")
         return []
 
 

@@ -442,7 +442,8 @@ export default function Admin() {
               <SelectTrigger data-testid="admin-status"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ongoing">مستمر</SelectItem>
-                <SelectItem value="completed">مكتمل</SelectItem>
+                <SelectItem value="completed">منتهي</SelectItem>
+                <SelectItem value="hiatus">متوقف مؤقتاً</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -473,7 +474,25 @@ export default function Admin() {
                   <div className="font-bold">{t.title_ar || t.title}</div>
                   <div className="flex items-center gap-2 mt-1">
                     <Badge>{t.type}</Badge>
-                    <span className="text-xs text-muted-foreground">{t.status}</span>
+                    <select
+                      value={t.status || "ongoing"}
+                      onChange={async (e) => {
+                        const newStatus = e.target.value;
+                        try {
+                          await api.patch(`/titles/${t.id}`, { status: newStatus });
+                          toast.success("تم تحديث الحالة");
+                          load();
+                        } catch (err) {
+                          toast.error(fmtError(err.response?.data?.detail));
+                        }
+                      }}
+                      className="bg-secondary text-xs rounded px-2 py-0.5 border border-border"
+                      data-testid={`admin-status-toggle-${t.id}`}
+                    >
+                      <option value="ongoing">مستمر</option>
+                      <option value="completed">منتهي</option>
+                      <option value="hiatus">متوقف مؤقتاً</option>
+                    </select>
                   </div>
                 </div>
                 <Button

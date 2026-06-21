@@ -39,6 +39,7 @@ function App() {
   <Route path="/" element={<Home />} />
   <Route path="/title/:id" element={<TitleDetail />} />
   <Route path="/title/:id/episode/:epId" element={<EpisodeView />} />
+  <Route path="/profile/:id" element={<Profile />} />
   <Route path="/lobby" element={<Lobby />} />
   <Route path="/privacy" element={<PrivacyPolicy />} />
   <Route path="/terms" element={<Terms />} />
@@ -49,7 +50,6 @@ function App() {
   <Route path="/messages/:userId" element={<DMThread />} />
   <Route path="/friends" element={<Friends />} />
   <Route path="/profile" element={<Profile />} />
-  <Route path="/profile/:id" element={<Profile />} />
   <Route path="/settings" element={<Settings />} />
   <Route path="/admin" element={<Protected adminOnly><Admin /></Protected>} />
 </Route>

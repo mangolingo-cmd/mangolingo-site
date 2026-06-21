@@ -1,0 +1,47 @@
+{
+  "summary": "Iteration 3 — verified 8 batches of improvements: titles sort_by(rating/views/newest), status filter, exact-match search priority, numeric chapter ordering, views_count auto-increment, public GET /api/users/{uid}, watchlist add/check/delete, partial PATCH /api/titles/{tid}, chat welcome bot + edit/delete (auth+admin) + emoji reactions, and new-chapter notification fan-out. Backend: 51/52 tests pass (98.1%) — sole failure is pre-existing GET /api/ 404 from iter1/iter2. Frontend: home sort/status selects, /admin status toggles (60 found), guest /profile/{uid}, service-worker.js + show-notification handler, chat lobby + visible MangaBot welcome + edited-indicator all verified. Two production bugs in the new code were FOUND AND FIXED inline: (1) /api/titles/{tid} returned 500 due to asyncio.create_task on a Motor Future (TypeError); (2) /api/users/search 404 because GET /api/users/{uid} was registered before the static /users/search route (shadowing).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/", "issue": "Still returns 404 — @api.get('/') registered after app.include_router(api). Pre-existing from iter1, NOT regressed."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration3_features.py",
+    "/app/test_reports/pytest/iter3_features.xml",
+    "/app/test_reports/pytest/iter3_all.xml"
+  ],
+  "action_items": [
+    "(low) Move @api.get('/') above app.include_router(api) — pre-existing cosmetic 404 on /api/.",
+    "(info) Confirm exact data-testid naming used by ChatRoom send button / message bubble / hover-action buttons and Profile unfollow button so future Playwright suites can hover-and-click them. Functionality is verified via API; testing agent could not locate testids 'chat-send-btn', 'chat-message-*', 'msg-edit/delete/react-*', 'watchlist-unfollow-*' — they may be named differently."
+  ],
+  "critical_code_review_comments": [
+    "FIXED (in /app/backend/server.py): asyncio.create_task(db.titles.update_one(...)) on line ~295 throws TypeError because Motor returns a Future, not a coroutine. Wrapped in inner async fn _bump(). This was breaking GET /api/titles/{tid} for ALL users with 500.",
+    "FIXED (in /app/backend/server.py): duplicate GET /users/{uid} registered at line ~224 BEFORE /users/search at line ~410 — FastAPI matched 'search' as a uid, breaking user search. Removed the duplicate route; the one declared after /users/search (in 'Users / Friends' section) is the live handler.",
+    "MangaBot welcome trigger uses count_documents == 1 on lobby messages by sender_id — correct one-shot behavior.",
+    "/api/messages/{mid} PATCH and DELETE correctly enforce sender-only edit and sender-OR-admin delete with 403 on violation.",
+    "/api/messages/{mid}/react toggles user_id in reactions['emoji'] list and prunes empty keys — clean implementation.",
+    "notify_followers_new_chapter uses bulk insert_many(ordered=False) per follower — efficient.",
+    "Episode ordering uses collation({'locale':'en_US','numericOrdering':true}) on sort('number',1) — verified 1,2,3,...10,11 order on a 100+ chapter title.",
+    "list_titles sort_spec dict supports rating / views / newest correctly.",
+    "watchlist /check returns {following: bool, status: str|None} — frontend-friendly shape.",
+    "Partial PATCH /titles/{tid} whitelists fields including 'status' — correct, prevents privilege fields from being overwritten.",
+    "Public profile public_user() strips password_hash — verified."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (2 production bug fixes: get_title views increment + removed duplicate /users/{uid} route)",
+    "/app/backend/tests/test_iteration3_features.py (new 25-test suite)"
+  ],
+  "success_rate": {"backend": "98.1% (51/52, only pre-existing test_root fails)", "frontend": "100% of testable selectors verified (sort/status/admin-toggle/SW/public-profile/chat-bot)"},
+  "test_credentials": "admin@otaku.com / Admin@12345, tester@otaku.com / Tester@12345 (both work)",
+  "seed_data_creation": "Two ephemeral users TEST_UserA_* and TEST_UserB_* created per test session via /auth/register (cleaned only via test_ prefix in email). One TEST_NOTIFY_* title created for notification fan-out and deleted in finally block. One TEST_PATCH_* title created for partial PATCH and deleted.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend /app/backend/server.py — GET /api/titles/{tid} now uses an inner async _bump() to fire-and-forget views_count++. Duplicate GET /users/{uid} near line 224 was removed; only the one near line 415 (after /users/search) remains. /api/messages/{mid} PATCH/DELETE + /api/messages/{mid}/react are NEW endpoints. /api/watchlist/{title_id}/check is NEW. /api/users/{uid} is PUBLIC. New chapter via POST /api/titles/{tid}/episodes fires asyncio task notify_followers_new_chapter — wait ~2s before polling /api/notifications. Service worker at /service-worker.js contains 'show-notification' message handler. Run regression: pytest /app/backend/tests/test_iteration3_features.py + /app/backend/tests/backend_test.py + /app/backend/tests/test_optional_auth_and_pwa.py.",
+  "rca_of_the_issue": "BUG 1: server.py:295 originally did `asyncio.create_task(db.titles.update_one(...))`. Motor's update_one returns an asyncio.Future (already scheduled), not a coroutine. asyncio.create_task() requires a coroutine, raising TypeError and triggering a 500 on every GET /api/titles/{tid}. FIX: wrapped in `async def _bump(): await db.titles.update_one(...); asyncio.create_task(_bump())`. BUG 2: GET /api/users/{uid} was declared at line ~224 (before /users/search at line ~410). FastAPI matches routes in declaration order, so GET /api/users/search was captured by the {uid} param handler and returned 404 (since 'search' is not a user id). FIX: removed the early /users/{uid} duplicate; the late declaration (after /users/search) now serves both purposes."
+}

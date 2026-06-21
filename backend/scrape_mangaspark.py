@@ -129,10 +129,37 @@ async def fetch_chapters(client: httpx.AsyncClient, slug: str, manga_id: str) ->
     return chapters
 
 
+async def _request_with_retry(client: httpx.AsyncClient, method: str, url: str, *, max_attempts: int = 4, **kw):
+    """HTTP request with exponential backoff (0.5s, 1s, 2s, 4s). Returns Response or raises."""
+    last_exc = None
+    for attempt in range(max_attempts):
+        try:
+            if method.upper() == "POST":
+                r = await client.post(url, **kw)
+            else:
+                r = await client.get(url, **kw)
+            # Retry on 5xx and 429
+            if r.status_code >= 500 or r.status_code == 429:
+                raise httpx.HTTPStatusError(f"http {r.status_code}", request=r.request, response=r)
+            return r
+        except Exception as e:
+            last_exc = e
+            if attempt == max_attempts - 1:
+                break
+            backoff = 0.5 * (2 ** attempt)
+            print(f"      retry {attempt + 1}/{max_attempts} after {backoff:.1f}s ({type(e).__name__})")
+            await asyncio.sleep(backoff)
+    raise last_exc if last_exc else RuntimeError("retry failed")
+
+
+# Minimum pages required for a chapter to be considered "complete" enough to save.
+MIN_VALID_PAGES = 3
+
+
 async def fetch_chapter_pages(client: httpx.AsyncClient, url: str) -> list[str]:
     try:
         chapter_headers = {**HEADERS, "Referer": url}
-        r = await client.get(url, headers=chapter_headers, timeout=30)
+        r = await _request_with_retry(client, "GET", url, headers=chapter_headers, timeout=30)
         if r.status_code != 200:
             return []
         pages = []
@@ -150,7 +177,8 @@ async def fetch_chapter_pages(client: httpx.AsyncClient, url: str) -> list[str]:
                 if src.startswith("http"):
                     pages.append(src)
         return pages
-    except Exception:
+    except Exception as e:
+        print(f"      ! pages fetch error after retries: {e}")
         return []
 
 
@@ -202,9 +230,13 @@ async def import_series(client: httpx.AsyncClient, slug: str, max_chapters: int 
     print(f"    title: {info['title']!r} | chapters: {len(chapters)}")
     await db.titles.insert_one(doc)
     ep_inserted = 0
+    skipped_incomplete = 0
     for ch in chapters:
         pages = await fetch_chapter_pages(client, ch["url"])
-        if not pages:
+        # Validation: require a minimum number of pages and all-https URLs
+        if len(pages) < MIN_VALID_PAGES or not all(p.startswith("http") for p in pages):
+            skipped_incomplete += 1
+            print(f"      skip chapter {ch['number']} — only {len(pages)} pages (need ≥{MIN_VALID_PAGES})")
             continue
         ep = {
             "id": str(uuid.uuid4()),
@@ -213,6 +245,7 @@ async def import_series(client: httpx.AsyncClient, slug: str, max_chapters: int 
             "name": f"الفصل {ch['number']}",
             "language": "ar",
             "pages": pages,
+            "page_count": len(pages),
             "source": SOURCE,
             "source_url": ch["url"],
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -220,8 +253,8 @@ async def import_series(client: httpx.AsyncClient, slug: str, max_chapters: int 
         await db.episodes.insert_one(ep)
         ep_inserted += 1
         await asyncio.sleep(0.2)
-    print(f"    + {ep_inserted} chapters imported")
-    return {"chapters": ep_inserted, "title": info["title"]}
+    print(f"    + {ep_inserted} chapters imported  ({skipped_incomplete} skipped as incomplete)")
+    return {"chapters": ep_inserted, "skipped": skipped_incomplete, "title": info["title"]}
 
 
 async def refresh_all_chapters() -> dict:
@@ -258,20 +291,51 @@ async def refresh_all_chapters() -> dict:
                     if ch["number"] in existing_nums:
                         continue
                     pages = await fetch_chapter_pages(client, ch["url"])
-                    if not pages:
-                        continue
-                    await db.episodes.insert_one({
+                    if len(pages) < MIN_VALID_PAGES or not all(p.startswith("http") for p in pages):
+                        # Incomplete — try once more after a delay before giving up
+                        await asyncio.sleep(1.5)
+                        pages = await fetch_chapter_pages(client, ch["url"])
+                        if len(pages) < MIN_VALID_PAGES:
+                            continue
+                    ep_doc = {
                         "id": str(uuid.uuid4()),
                         "title_id": t["id"],
                         "number": ch["number"],
                         "name": f"الفصل {ch['number']}",
                         "language": "ar",
                         "pages": pages,
+                        "page_count": len(pages),
                         "source": SOURCE,
                         "source_url": ch["url"],
                         "created_at": datetime.now(timezone.utc).isoformat(),
-                    })
+                    }
+                    await db.episodes.insert_one(ep_doc)
                     new_chapters += 1
+                    # Fan-out notification to followers (in-app only — frontend SW polls)
+                    try:
+                        followers = await db.watchlist.find({"title_id": t["id"]}).to_list(None)
+                        if followers:
+                            now = datetime.now(timezone.utc).isoformat()
+                            await db.notifications.insert_many([
+                                {
+                                    "id": str(uuid.uuid4()),
+                                    "user_id": f["user_id"],
+                                    "type": "new_chapter",
+                                    "payload": {
+                                        "title_id": t["id"],
+                                        "title_name": t.get("title_ar") or t.get("title"),
+                                        "cover_url": t.get("cover_url"),
+                                        "episode_id": ep_doc["id"],
+                                        "episode_number": ch["number"],
+                                        "language": "ar",
+                                    },
+                                    "read": False,
+                                    "created_at": now,
+                                }
+                                for f in followers
+                            ], ordered=False)
+                    except Exception as e:
+                        print(f"  notify error: {e}")
                     await asyncio.sleep(0.3)
             except Exception as e:
                 print(f"refresh error for {slug}: {e}")
