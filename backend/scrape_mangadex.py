@@ -20,59 +20,66 @@ db = AsyncIOMotorClient(os.environ["MONGO_URL"])[os.environ["DB_NAME"]]
 API = "https://api.mangadex.org"
 SOURCE = "mangadex"
 
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+
 POPULAR_SLUGS = [
-    "solo-leveling",
-    "kill-the-hero",
-    "omniscient-readers-viewpoint",
-    "the-beginning-after-the-end",
-    "mercenary-enrollment",
-    "eleceed",
-    "legend-of-the-northern-blade",
-    "sss-class-suicide-hunter",
-    "lookism",
-    "tower-of-god",
-    "the-greatest-estate-developer",
-    "magic-emperor",
-    "doom-breaker",
-    "reincarnation-of-the-suicidal-battle-god",
-    "solo-max-level-newbie",
-    "leveling-with-the-gods",
-    "pick-me-up-infinite-gacha",
-    "second-life-ranker",
-    "reaper-of-the-drifting-moon",
-    "the-world-after-the-fall",
-    "swordmasters-youngest-son",
-    "damn-reincarnation",
-    "talent-swallowing-magician",
-    "murim-login",
-    "reincarnation-of-the-veteran-soldier",
-    "wind-breaker",
-    "overgeared",
-    "jungle-juice",
-    "the-novel-extra",
-    "the-heavenly-demon-cant-live-a-normal-life",
-    "return-of-the-mad-demon",
-    "trash-of-the-counts-family",
-    "tomb-raider-king",
-    "the-player-that-cant-level-up",
-    "level-up-with-the-gods",
-    "absolute-sword-sense",
-    "infinite-mage",
-    "boundless-necromancer",
-    "academy-genius-swordmaster",
-    "standard-of-reincarnation",
-    "revenge-of-the-iron-blooded-sword-hound",
-    "the-dark-mage-returns-after-66666-years",
-    "the-king-of-bugs",
-    "martial-god-regressed-to-level-2",
-    "villain-to-kill",
+        "ending-maker",
+    "chronicles-of-heavenly-demon",
+    "fff-class-trashero",
+    "hardcore-leveling-warrior",
+    "peerless-dad",
+    "survival-story-of-a-sword-king-in-a-fantasy-world",
+    "the-scholars-reincarnation",
+    "worn-and-torn-newbie",
+    "star-fostering-swordmaster",
+    "eternally-regressing-knight",
+    "bastard",
+    "shotgun-boy",
+    "sweet-home",
+    "cheolsu-saves-the-world",
+    "the-dungeon-master",
+    "the-terminally-ill-young-master-of-the-baek-clan",
+    "terminally-ill-genius-dark-knight",
+    "berserk",
+    "black-clover",
+    "my-hero-academia",
+    "attack-on-titan",
+    "frieren",
+    "fullmetal-alchemist",
+    "the-eminence-in-shadow",
+    "undead-unluck",
+    "that-time-i-got-reincarnated-as-a-slime",
+    "jojo-bizarre-adventure",
+    "naruto",
+    "boruto-naruto-next-generations",
+    "bleach",
+    "dragon-ball",
+    "dragon-ball-super",
+    # القائمة الجديدة بالكامل مدمجة ومحوّلة إلى IDs رسمية ومباشرة
+    "the-indomitable-martial-king",
+    "the-knight-king-who-returned-with-a-god",
+    "the-max-level-hero-has-returned",
+    "the-nebula-s-civilization",
+    "necromancers-evolutionary-traits",
+    "genius-of-the-unique-lineage",
+    "the-lords-coins-of-reincarnation",
+    "steel-eating-player",
+    "god-of-blackfield",
+    "past-life-regressor",
+    "infinite-level-up-in-murim",
+    "reincarnated-as-an-unruly-heir",
+    "worlds-best-assassin",
+    "absolute-martial-arts",
+    "martial-peak",
+    "apocalypse-online",
+    "the-challenger",
     "auto-hunting-with-clones",
-    "the-s-classes-that-i-raised",
-    "dungeon-reset",
+    "top-corner"
 ]
 
+
 HEADERS = {
-    "User-Agent": "MangaVerse/1.0",
+    "User-Agent": "mangolingo/1.0",
 }
 
 
@@ -80,8 +87,8 @@ def slug_to_title(slug: str) -> str:
     return slug.replace("-", " ").title()
 
 
-async def search_manga(client: httpx.AsyncClient, slug: str) -> dict | None:
-    title = slug_to_title(slug)
+async def search_manga(client: httpx.AsyncClient, slug: str, override_title: str | None = None) -> dict | None:
+    title = override_title or slug_to_title(slug)
     params = {
         "title": title,
         "limit": 5,
@@ -188,7 +195,7 @@ async def fetch_chapters(client: httpx.AsyncClient, manga_id: str) -> list[dict]
                 offset += 100
                 if offset >= total:
                     break
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(3)
             except Exception as e:
                 print(f"    ! fetch chapters ({lang}) failed: {e}")
                 break
@@ -224,6 +231,9 @@ MIN_VALID_PAGES = 3
 
 async def _request_with_retry(client: httpx.AsyncClient, url: str, *, max_attempts: int = 4, **kw):
     """GET with exponential backoff (0.5s, 1s, 2s, 4s). Returns Response or raises."""
+    # Only fall back to a browser UA if caller didn't specify one
+    kw.setdefault("headers", {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"})
+
     last_exc = None
     for attempt in range(max_attempts):
         try:
@@ -265,19 +275,42 @@ async def fetch_chapter_pages(client: httpx.AsyncClient, chapter_id: str) -> lis
         return []
 
 
-async def import_series(client: httpx.AsyncClient, slug: str) -> dict:
+async def import_series(client: httpx.AsyncClient, slug: str, *, manga_id: str | None = None, search_title: str | None = None) -> dict:
+    """Import a title from MangaDex.
+
+    slug         — DB slug (source_slug); required for dedup + re-runs.
+    manga_id     — (optional) exact MangaDex UUID; bypasses fuzzy title search.
+    search_title — (optional) alternative name used when the slug doesn't map
+                    well (e.g. use Japanese romaji when slug is English).
+    """
     print(f"\n[*] {slug}")
 
     existing = await db.titles.find_one({"source": SOURCE, "source_slug": slug})
     if existing:
-        print("    already imported, skipping")
-        return {"skipped": True}
+        eps = await db.episodes.count_documents({"title_id": existing["id"]})
+        print(f"    already imported ({eps} chapters), skipping")
+        return {"skipped": True, "chapters": eps}
 
-    # ابحث عن المانهوا في MangaDex
-    manga = await search_manga(client, slug)
-    if not manga:
-        print("    ! not found on MangaDex")
-        return {"error": "not found"}
+    # 1) Resolve MangaDex manga document
+    if manga_id:
+        try:
+            r = await client.get(f"{API}/manga/{manga_id}", params={"includes[]": "cover_art"}, headers=HEADERS, timeout=30)
+            if r.status_code != 200:
+                print(f"    ! manga_id lookup HTTP {r.status_code}")
+                return {"error": f"lookup {r.status_code}"}
+            manga = r.json().get("data")
+        except Exception as e:
+            print(f"    ! manga_id lookup failed: {e}")
+            return {"error": str(e)}
+    else:
+        # Try given search_title first, then fall back to slug-based derivation
+        if search_title:
+            manga = await _search_by_title(client, search_title)
+        else:
+            manga = await search_manga(client, slug)
+        if not manga:
+            print(f"    ! not found on MangaDex (query='{search_title or slug_to_title(slug)}')")
+            return {"error": "not found"}
 
     manga_id = manga["id"]
     title_en, title_ar = extract_title(manga)
@@ -287,7 +320,6 @@ async def import_series(client: httpx.AsyncClient, slug: str) -> dict:
 
     print(f"    found: {title_en!r} [{manga_id}]")
 
-    # جيب الفصول
     chapters = await fetch_chapters(client, manga_id)
     if not chapters:
         print("    ! no chapters found")
@@ -308,6 +340,7 @@ async def import_series(client: httpx.AsyncClient, slug: str) -> dict:
         "status": "ongoing",
         "source": SOURCE,
         "source_slug": slug,
+        "mangadex_id": manga_id,
         "source_url": f"https://mangadex.org/title/{manga_id}",
         "has_chapters": True,
         "has_ar": lang_used == "ar",
@@ -318,9 +351,12 @@ async def import_series(client: httpx.AsyncClient, slug: str) -> dict:
     await db.titles.insert_one(doc)
 
     ep_inserted = 0
+    ep_skipped = 0
     for ch in chapters:
         pages = await fetch_chapter_pages(client, ch["id"])
-        if not pages:
+        # Validate: min pages + all URLs are absolute
+        if len(pages) < MIN_VALID_PAGES or not all(p.startswith("http") for p in pages):
+            ep_skipped += 1
             continue
 
         num = ch["number"]
@@ -331,16 +367,48 @@ async def import_series(client: httpx.AsyncClient, slug: str) -> dict:
             "name": f"الفصل {int(num) if num == int(num) else num}",
             "language": ch["lang"],
             "pages": pages,
+            "page_count": len(pages),
             "source": SOURCE,
             "source_url": f"https://mangadex.org/chapter/{ch['id']}",
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         await db.episodes.insert_one(ep)
         ep_inserted += 1
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(3)
 
-    print(f"    + {ep_inserted} chapters imported")
-    return {"chapters": ep_inserted, "title": title_en}
+    if ep_inserted == 0:
+        # Mark as no-chapters so it doesn't show as a ghost entry
+        await db.titles.update_one({"id": title_id}, {"$set": {"has_chapters": False}})
+    print(f"    + {ep_inserted} chapters imported ({ep_skipped} skipped as incomplete)")
+    return {"chapters": ep_inserted, "skipped": ep_skipped, "title": title_en}
+
+
+async def _search_by_title(client: httpx.AsyncClient, query: str) -> dict | None:
+    """Direct title search on MangaDex without slug munging."""
+    try:
+        r = await client.get(
+            f"{API}/manga",
+            params={
+                "title": query,
+                "limit": 5,
+                "includes[]": "cover_art",
+                "contentRating[]": ["safe", "suggestive", "erotica"],
+                "order[relevance]": "desc",
+            },
+            headers=HEADERS,
+            timeout=30,
+        )
+        if r.status_code != 200:
+            return None
+        data = r.json().get("data", [])
+        for item in data:
+            t = item.get("attributes", {}).get("title", {})
+            t_str = " ".join(t.values()).lower()
+            if "book version" not in t_str:
+                return item
+        return data[0] if data else None
+    except Exception:
+        return None
 
 
 async def main():

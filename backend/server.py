@@ -1472,6 +1472,12 @@ async def admin_import_mangaspark_bundle(_: dict = Depends(require_admin)):
         bundle = json.loads(gzip.decompress(f.read()))
     titles = bundle.get("titles", [])
     episodes = bundle.get("episodes", [])
+        # حقن الـ 20 مانهوا الجديدة لضمان ضخها بالكامل في قاعدة البيانات الحية
+    new_slugs = ["the-indomitable-martial-king", "the-knight-king-who-returned-with-a-god", "the-max-level-hero-has-returned", "the-nebula-s-civilization", "necromancers-evolutionary-traits", "genius-of-the-unique-lineage", "the-lords-coins-of-reincarnation", "steel-eating-player", "god-of-blackfield", "past-life-regressor", "infinite-level-up-in-murim", "reincarnated-as-an-unruly-heir", "worlds-best-assassin", "absolute-martial-arts", "martial-peak", "apocalypse-online", "the-challenger", "auto-hunting-with-clones", "top-corner"]
+    for s in new_slugs:
+        if not any(t.get("id") == s for t in titles):
+            titles.append({"id": s, "title": s.replace("-", " ").title(), "source": "mangaspark"})
+
 
     job_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
@@ -1716,12 +1722,12 @@ async def on_start():
 
     # Background scheduler: refresh manga-spark chapters every 6 hours
     async def _mangaspark_refresh_loop():
-        from scrape_mangaspark import refresh_all_chapters
+        from scrape_mangaspark import import_series, refresh_all_chapters
         # initial delay so app finishes startup quickly
         await asyncio.sleep(60)
         while True:
             try:
-                stats = await refresh_all_chapters()
+                stats = await refresh_all_chapters(db)
                 logger.info(f"[mangaspark refresh] scanned={stats['titles_scanned']} new_chapters={stats['new_chapters']}")
                 await db.system_logs.insert_one({
                     "kind": "mangaspark_refresh",

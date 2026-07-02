@@ -14,7 +14,7 @@ import { toast } from "sonner";
 const STATUS_LABEL = {
   watching: "أشاهد",
   completed: "أكملت",
-  plan: "أنوي",
+  plan: "انوي",
   dropped: "تركت",
   favorite: "مفضّل",
 };

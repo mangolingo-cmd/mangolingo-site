@@ -33,6 +33,7 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  config.params = { ...config.params, t: new Date().getTime() };
   return config;
 });
 
