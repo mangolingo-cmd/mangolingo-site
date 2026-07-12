@@ -1183,15 +1183,45 @@ async def get_upload(file_id: str):
 # -------- Startup --------
 @api.post("/admin/refresh-mangaspark")
 async def admin_refresh_mangaspark(_: dict = Depends(require_admin)):
-    """Manually trigger an immediate manga-spark chapter refresh."""
+    """Manually trigger an immediate manga-spark chapter refresh.
+    Runs in background — poll /api/admin/job-status?kind=mangaspark_refresh_manual."""
     from scrape_mangaspark import refresh_all_chapters
-    stats = await refresh_all_chapters()
+
+    job_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
     await db.system_logs.insert_one({
         "kind": "mangaspark_refresh_manual",
-        "at": datetime.now(timezone.utc).isoformat(),
-        **stats,
+        "job_id": job_id,
+        "status": "running",
+        "at": now,
+        "started_at": now,
+        "titles_scanned": 0,
+        "new_chapters": 0,
     })
-    return stats
+
+    async def _worker():
+        try:
+            stats = await refresh_all_chapters(db)
+            await db.system_logs.update_one(
+                {"job_id": job_id},
+                {"$set": {
+                    "status": "done",
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                    **stats,
+                }},
+            )
+            logger.info(f"[refresh-mangaspark {job_id}] done {stats}")
+        except Exception as e:
+            logger.exception(f"[refresh-mangaspark {job_id}] failed")
+            await db.system_logs.update_one(
+                {"job_id": job_id},
+                {"$set": {"status": "failed", "error": str(e)[:500],
+                          "finished_at": datetime.now(timezone.utc).isoformat()}},
+            )
+
+    asyncio.create_task(_worker())
+    return {"status": "processing", "job_id": job_id,
+            "poll_url": "/api/admin/job-status?kind=mangaspark_refresh_manual"}
 
 # -------- Production maintenance endpoints (admin-only) --------
 @api.post("/admin/dedupe-titles")
@@ -1445,7 +1475,7 @@ async def admin_fix_missing_covers(_: dict = Depends(require_admin)):
 async def admin_job_status(kind: str, _: dict = Depends(require_admin)):
     """Generic status poll for admin background jobs.
     kind: admin_dedupe | admin_fix_covers | admin_import_bundle"""
-    if kind not in {"admin_dedupe", "admin_fix_covers", "admin_import_bundle"}:
+    if kind not in {"admin_dedupe", "admin_fix_covers", "admin_import_bundle", "mangaspark_refresh_manual"}:
         raise HTTPException(400, "Invalid kind")
     log = await db.system_logs.find_one(
         {"kind": kind}, {"_id": 0}, sort=[("started_at", -1)]

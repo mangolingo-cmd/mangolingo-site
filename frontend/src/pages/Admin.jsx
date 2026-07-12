@@ -151,9 +151,30 @@ export default function Admin() {
     setRefreshing(true);
     toast.info("جارٍ فحص جميع عناوين manga-spark للفصول الجديدة...");
     try {
-      const { data } = await api.post("/admin/refresh-mangaspark", null, { timeout: 600000 });
-      toast.success(`اكتمل: فُحص ${data.titles_scanned} عنواناً، أُضيف ${data.new_chapters} فصلاً جديداً`);
-      await loadRefreshLog();
+      const { data } = await api.post("/admin/refresh-mangaspark", null, { timeout: 30000 });
+      if (data.status === "processing") {
+        toast.info(`المهمة بدأت في الخلفية (job ${data.job_id?.slice(0, 8)})`);
+        // Poll until done
+        const start = Date.now();
+        while (Date.now() - start < 30 * 60 * 1000) {
+          await new Promise((r) => setTimeout(r, 3000));
+          try {
+            const { data: s } = await api.get("/admin/job-status", { params: { kind: "mangaspark_refresh_manual" } });
+            if (s.status === "done") {
+              toast.success(`اكتمل: فُحص ${s.titles_scanned || 0} عنواناً، أُضيف ${s.new_chapters || 0} فصلاً`);
+              await loadRefreshLog();
+              break;
+            }
+            if (s.status === "failed") {
+              toast.error(`فشل التحديث: ${s.error || "خطأ غير معروف"}`);
+              break;
+            }
+          } catch (e) { /* keep polling */ }
+        }
+      } else {
+        toast.success(`اكتمل: فُحص ${data.titles_scanned} عنواناً، أُضيف ${data.new_chapters} فصلاً جديداً`);
+        await loadRefreshLog();
+      }
     } catch (e) {
       toast.error(fmtError(e.response?.data?.detail));
     }
