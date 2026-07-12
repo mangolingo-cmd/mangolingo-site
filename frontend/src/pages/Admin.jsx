@@ -367,6 +367,21 @@ export default function Admin() {
             <ImageIcon className={`w-4 h-4 me-1 ${maintBusy === "covers" ? "animate-pulse" : ""}`} />
             {maintBusy === "covers" ? "جارٍ الإصلاح..." : "إصلاح الأغلفة"}
           </Button>
+          <Button
+            onClick={() => runMaintenance(
+              "reclassify",
+              "/admin/reclassify-types",
+              "إعادة تصنيف الأنواع (مانجا/مانهوا/مانها) حسب لغة العمل الأصلية من MangaDex",
+              "admin_reclassify_types",
+              (d) => `أُعيد تصنيف ${d.reclassified} عنواناً (منها ${d.manhua_found} مانها) من أصل ${d.scanned}`,
+            )}
+            disabled={!!maintBusy}
+            variant="secondary"
+            data-testid="reclassify-types-btn"
+          >
+            <BookOpen className={`w-4 h-4 me-1 ${maintBusy === "reclassify" ? "animate-pulse" : ""}`} />
+            {maintBusy === "reclassify" ? "جارٍ التصنيف..." : "تصنيف المانها"}
+          </Button>
         </div>
         <p className="text-xs text-muted-foreground border-t border-border pt-2 mt-2">
           💡 الترتيب المقترح: <strong>1) استيراد الحزمة</strong> ←
@@ -406,6 +421,17 @@ export default function Admin() {
             renderStats={(d) => (
               <>أُصلح: {d.covers_updated ?? 0} / {d.scanned ?? "?"}
                 {d.still_missing != null ? ` • متبقي بدون غلاف: ${d.still_missing}` : ""}</>
+            )}
+          />
+        )}
+        {jobProgress.admin_reclassify_types && (
+          <JobProgressCard
+            label="تصنيف المانها"
+            data={jobProgress.admin_reclassify_types}
+            testid="reclassify-progress"
+            renderStats={(d) => (
+              <>فُحص: {d.progress ?? 0} / {d.scanned ?? "?"}{" • "}
+                أُعيد تصنيف: {d.reclassified ?? 0}{" • "}مانها: {d.manhua_found ?? 0}</>
             )}
           />
         )}
@@ -454,6 +480,7 @@ export default function Admin() {
               <SelectContent>
                 <SelectItem value="manhwa">مانهوا</SelectItem>
                 <SelectItem value="manga">مانجا</SelectItem>
+                <SelectItem value="manhua">مانها</SelectItem>
               </SelectContent>
             </Select>
           </div>

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api, { proxyImg } from "@/api";
 import { useAuth } from "@/context/AuthContext";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, X } from "lucide-react";
 
 /**
  * Horizontal "Continue Reading" rail.
@@ -52,6 +52,17 @@ export default function ContinueReading() {
     return () => { cancelled = true; };
   }, [user?.id]);
 
+  const remove = async (e, titleId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setItems((prev) => prev.filter((it) => it.title_id !== titleId));
+    if (user) {
+      try { await api.delete(`/reading/progress/${titleId}`); } catch (err) { /* ignore */ }
+    } else {
+      localStorage.removeItem(`reading:${titleId}`);
+    }
+  };
+
   if (items.length === 0) return null;
 
   return (
@@ -68,9 +79,18 @@ export default function ContinueReading() {
             <Link
               key={it.title_id}
               to={`/title/${it.title_id}/episode/${it.episode_id}`}
-              className="shrink-0 w-32 sm:w-36 group"
+              className="shrink-0 w-32 sm:w-36 group relative"
               data-testid={`continue-card-${it.title_id}`}
             >
+              <button
+                onClick={(e) => remove(e, it.title_id)}
+                className="absolute top-1.5 end-1.5 z-10 w-6 h-6 flex items-center justify-center rounded-full bg-black/70 text-white/80 hover:bg-destructive hover:text-white transition border border-white/10"
+                title="إزالة من تابع القراءة"
+                aria-label="إزالة من تابع القراءة"
+                data-testid={`continue-remove-${it.title_id}`}
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
               <div className="aspect-[2/3] rounded-lg overflow-hidden bg-[#0F111A] border border-border group-hover:border-accent transition">
                 {t.cover_url && (
                   <img src={proxyImg(t.cover_url)} alt={t.title_ar || t.title} className="w-full h-full object-cover" />

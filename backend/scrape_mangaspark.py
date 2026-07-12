@@ -294,6 +294,7 @@ async def import_series(client, slug: str, max_chapters: int = 1000) -> dict:
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         await db.episodes.insert_one(ep)
+        await db.titles.update_one({"id": title_id}, {"$max": {"last_episode_at": ep["created_at"]}})
         ep_inserted += 1
         await asyncio.sleep(0.2)
 
@@ -367,6 +368,7 @@ async def refresh_all_chapters(db_arg=None) -> dict:
                         "created_at": datetime.now(timezone.utc).isoformat(),
                     }
                     await active_db.episodes.insert_one(ep_doc)
+                    await active_db.titles.update_one({"id": t["id"]}, {"$max": {"last_episode_at": ep_doc["created_at"]}})
                     new_chapters += 1
                     # Fan-out in-app notifications to followers
                     try:

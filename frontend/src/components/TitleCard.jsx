@@ -4,7 +4,7 @@ import { Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { proxyImg } from "@/api";
 
-const typeLabel = { manhwa: "مانهوا", manga: "مانجا" };
+const typeLabel = { manhwa: "مانهوا", manga: "مانجا", manhua: "مانها" };
 
 export default function TitleCard({ title }) {
   return (

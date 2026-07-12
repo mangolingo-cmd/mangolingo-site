@@ -329,9 +329,11 @@ async def import_series(client: httpx.AsyncClient, slug: str, *, manga_id: str |
     print(f"    chapters: {len(chapters)} | lang: {lang_used}")
 
     title_id = str(uuid.uuid4())
+    orig_lang = (manga.get("attributes") or {}).get("originalLanguage", "")
+    ttype = {"ja": "manga", "ko": "manhwa", "zh": "manhua", "zh-hk": "manhua", "zh-tw": "manhua"}.get(orig_lang, "manhwa")
     doc = {
         "id": title_id,
-        "type": "manhwa",
+        "type": ttype,
         "title": title_en,
         "title_ar": title_ar,
         "synopsis": description,
@@ -373,6 +375,7 @@ async def import_series(client: httpx.AsyncClient, slug: str, *, manga_id: str |
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         await db.episodes.insert_one(ep)
+        await db.titles.update_one({"id": title_id}, {"$max": {"last_episode_at": ep["created_at"]}})
         ep_inserted += 1
         await asyncio.sleep(3)
 

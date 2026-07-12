@@ -260,6 +260,7 @@ async def list_titles(type: Optional[str] = None, q: Optional[str] = None, ar_on
         "rating": [("rating_avg", -1), ("rating_count", -1)],
         "views": [("views_count", -1), ("created_at", -1)],
         "newest": [("has_ar", -1), ("created_at", -1)],
+        "updated": [("last_episode_at", -1), ("created_at", -1)],
     }.get(sort_by, [("has_ar", -1), ("created_at", -1)])
     items = await db.titles.find(query, {"_id": 0}).sort(sort_spec).skip(skip).limit(limit).to_list(limit)
     return {
@@ -819,6 +820,7 @@ async def create_episode(tid: str, data: EpisodeIn, _: dict = Depends(require_ad
     }
     await db.episodes.insert_one(doc)
     doc.pop("_id", None)
+    await db.titles.update_one({"id": tid}, {"$max": {"last_episode_at": doc["created_at"]}})
     # Notify all watchlist followers about the new chapter
     title = await db.titles.find_one({"id": tid}, {"_id": 0})
     asyncio.create_task(notify_followers_new_chapter(title, doc))
@@ -877,6 +879,11 @@ async def list_continue(user: dict = Depends(get_current_user)):
 async def get_progress(title_id: str, user: dict = Depends(get_current_user)):
     p = await db.reading_progress.find_one({"user_id": user["id"], "title_id": title_id}, {"_id": 0})
     return p or {}
+
+@api.delete("/reading/progress/{title_id}")
+async def delete_progress(title_id: str, user: dict = Depends(get_current_user)):
+    await db.reading_progress.delete_one({"user_id": user["id"], "title_id": title_id})
+    return {"ok": True}
 
 # -------- MangaDex integration --------
 MANGADEX_BASE = "https://api.mangadex.org"
@@ -1032,14 +1039,16 @@ async def _fetch_and_cache_mangadex_chapters(title: dict, lang: str = "en"):
     update = {"$addToSet": {"langs_fetched": lang}}
     if lang == "ar" and inserted > 0:
         update["$set"] = {"has_ar": True}
+    if inserted > 0:
+        update["$max"] = {"last_episode_at": datetime.now(timezone.utc).isoformat()}
     await db.titles.update_one({"id": title["id"]}, update)
     return inserted
 
 @api.post("/admin/import_mangadex")
 async def import_mangadex(ttype: str = "manga", total: int = 500, order: str = "followedCount", _: dict = Depends(require_admin)):
-    if ttype not in ("manga", "manhwa"):
-        raise HTTPException(400, "نوع غير صالح: manga أو manhwa فقط")
-    langs = ["ja"] if ttype == "manga" else ["ko"]
+    if ttype not in ("manga", "manhwa", "manhua"):
+        raise HTTPException(400, "نوع غير صالح: manga أو manhwa أو manhua فقط")
+    langs = {"manga": ["ja"], "manhwa": ["ko"], "manhua": ["zh", "zh-hk"]}[ttype]
     # Skip past titles we've already imported for this type — fetch the next batch
     existing = await db.titles.count_documents({"type": ttype, "mangadex_id": {"$exists": True}})
     count = await _import_mangadex_batch(ttype, langs, min(total, 1000), start_offset=existing if order == "followedCount" else 0, order=order)
@@ -1471,11 +1480,118 @@ async def admin_fix_missing_covers(_: dict = Depends(require_admin)):
     }
 
 
+async def _backfill_last_episode_at():
+    """Set titles.last_episode_at = max(episodes.created_at) per title. Idempotent."""
+    from pymongo import UpdateOne
+    pipeline = [{"$group": {"_id": "$title_id", "last": {"$max": "$created_at"}}}]
+    ops = []
+    async for g in db.episodes.aggregate(pipeline):
+        if g.get("_id") and g.get("last"):
+            ops.append(UpdateOne({"id": g["_id"]}, {"$max": {"last_episode_at": g["last"]}}))
+        if len(ops) >= 1000:
+            await db.titles.bulk_write(ops, ordered=False)
+            ops = []
+    if ops:
+        await db.titles.bulk_write(ops, ordered=False)
+
+
+LANG_TO_TYPE = {"ja": "manga", "ko": "manhwa", "zh": "manhua", "zh-hk": "manhua", "zh-tw": "manhua"}
+
+
+@api.post("/admin/reclassify-types")
+async def admin_reclassify_types(_: dict = Depends(require_admin)):
+    """Fix title types (manga/manhwa/manhua) from MangaDex originalLanguage.
+    Runs in background — poll /admin/job-status?kind=admin_reclassify_types."""
+    from pymongo import UpdateOne
+
+    job_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    targets = await db.titles.find(
+        {"mangadex_id": {"$exists": True, "$nin": [None, ""]}},
+        {"_id": 0, "id": 1, "mangadex_id": 1, "type": 1},
+    ).to_list(length=None)
+
+    await db.system_logs.insert_one({
+        "kind": "admin_reclassify_types",
+        "job_id": job_id,
+        "status": "running",
+        "at": now,
+        "started_at": now,
+        "scanned": len(targets),
+        "reclassified": 0,
+        "manhua_found": 0,
+    })
+
+    async def _worker():
+        try:
+            changed = 0
+            manhua = 0
+            async with httpx.AsyncClient(timeout=25) as c:
+                for start in range(0, len(targets), 100):
+                    batch = targets[start : start + 100]
+                    params = [("ids[]", t["mangadex_id"]) for t in batch] + [
+                        ("limit", 100),
+                        ("contentRating[]", "safe"), ("contentRating[]", "suggestive"), ("contentRating[]", "erotica"),
+                    ]
+                    try:
+                        r = await c.get("https://api.mangadex.org/manga", params=params)
+                        if r.status_code != 200:
+                            await asyncio.sleep(1.5)
+                            continue
+                        lang_by_mid = {
+                            item["id"]: (item.get("attributes") or {}).get("originalLanguage", "")
+                            for item in r.json().get("data", [])
+                        }
+                    except Exception:
+                        await asyncio.sleep(1.5)
+                        continue
+                    ops = []
+                    for t in batch:
+                        new_type = LANG_TO_TYPE.get(lang_by_mid.get(t["mangadex_id"], ""))
+                        if new_type and new_type != t.get("type"):
+                            ops.append(UpdateOne({"id": t["id"]}, {"$set": {"type": new_type}}))
+                            changed += 1
+                            if new_type == "manhua":
+                                manhua += 1
+                    if ops:
+                        await db.titles.bulk_write(ops, ordered=False)
+                    await db.system_logs.update_one(
+                        {"job_id": job_id},
+                        {"$set": {"reclassified": changed, "manhua_found": manhua, "progress": start + len(batch)}},
+                    )
+                    await asyncio.sleep(0.5)
+            await db.system_logs.update_one(
+                {"job_id": job_id},
+                {"$set": {
+                    "status": "done",
+                    "reclassified": changed,
+                    "manhua_found": manhua,
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                }},
+            )
+            logger.info(f"[reclassify-types {job_id}] done changed={changed} manhua={manhua}")
+        except Exception as e:
+            logger.exception(f"[reclassify-types {job_id}] failed")
+            await db.system_logs.update_one(
+                {"job_id": job_id},
+                {"$set": {"status": "failed", "error": str(e)[:500],
+                          "finished_at": datetime.now(timezone.utc).isoformat()}},
+            )
+
+    asyncio.create_task(_worker())
+    return {
+        "status": "processing",
+        "job_id": job_id,
+        "scanned": len(targets),
+        "poll_url": "/api/admin/job-status?kind=admin_reclassify_types",
+    }
+
+
 @api.get("/admin/job-status")
 async def admin_job_status(kind: str, _: dict = Depends(require_admin)):
     """Generic status poll for admin background jobs.
     kind: admin_dedupe | admin_fix_covers | admin_import_bundle"""
-    if kind not in {"admin_dedupe", "admin_fix_covers", "admin_import_bundle", "mangaspark_refresh_manual"}:
+    if kind not in {"admin_dedupe", "admin_fix_covers", "admin_import_bundle", "mangaspark_refresh_manual", "admin_reclassify_types"}:
         raise HTTPException(400, "Invalid kind")
     log = await db.system_logs.find_one(
         {"kind": kind}, {"_id": 0}, sort=[("started_at", -1)]
@@ -1555,6 +1671,7 @@ async def admin_import_mangaspark_bundle(_: dict = Depends(require_admin)):
                     {"job_id": job_id}, {"$set": {"chapters_inserted": done_e}}
                 )
 
+            await _backfill_last_episode_at()
             await db.system_logs.update_one(
                 {"job_id": job_id},
                 {"$set": {
@@ -1771,6 +1888,18 @@ async def on_start():
 
     asyncio.create_task(_mangaspark_refresh_loop())
     logger.info("Background mangaspark refresh scheduler started (every 6h)")
+
+    # One-time (idempotent) backfill of titles.last_episode_at for the "الجديد" sort
+    async def _backfill_task():
+        try:
+            missing = await db.titles.count_documents({"has_chapters": {"$ne": False}, "last_episode_at": {"$exists": False}})
+            if missing > 0:
+                await _backfill_last_episode_at()
+                logger.info(f"Backfilled last_episode_at for titles (was missing on {missing})")
+        except Exception:
+            logger.exception("last_episode_at backfill failed")
+
+    asyncio.create_task(_backfill_task())
 
 @app.on_event("shutdown")
 async def on_stop():

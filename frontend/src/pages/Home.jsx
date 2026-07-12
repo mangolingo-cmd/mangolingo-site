@@ -102,6 +102,7 @@ export default function Home() {
               <TabsTrigger value="all" data-testid="tab-all">{t("all")}</TabsTrigger>
               <TabsTrigger value="manhwa" data-testid="tab-manhwa">{t("manhwa")}</TabsTrigger>
               <TabsTrigger value="manga" data-testid="tab-manga">{t("manga")}</TabsTrigger>
+              <TabsTrigger value="manhua" data-testid="tab-manhua">{t("manhua")}</TabsTrigger>
             </TabsList>
           </Tabs>
           <button
@@ -118,6 +119,7 @@ export default function Home() {
             data-testid="sort-by-select"
           >
             <option value="newest">الأحدث</option>
+            <option value="updated">الجديد (فصول حديثة)</option>
             <option value="rating">الأعلى تقييماً</option>
             <option value="views">الأكثر مشاهدة</option>
           </select>
