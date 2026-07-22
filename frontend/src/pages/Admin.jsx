@@ -369,6 +369,21 @@ export default function Admin() {
           </Button>
           <Button
             onClick={() => runMaintenance(
+              "olympus",
+              "/admin/import-olympustaff",
+              "استيراد ذكي من OlympusStaff: سد الفصول الناقصة + استيراد أعمال جديدة (حتى 10 أعمال و400 فصل لكل تشغيلة — أعد الضغط للمتابعة)",
+              "admin_olympus_import",
+              (d) => `اكتمل: طابق ${d.matched} عملاً • ${d.new_titles} عمل جديد • أُضيف ${d.chapters_added} فصلاً`,
+            )}
+            disabled={!!maintBusy}
+            className="bg-primary hover:bg-primary/90"
+            data-testid="olympus-import-btn"
+          >
+            <RefreshCw className={`w-4 h-4 me-1 ${maintBusy === "olympus" ? "animate-spin" : ""}`} />
+            {maintBusy === "olympus" ? "جارٍ الاستيراد..." : "استيراد من OlympusStaff"}
+          </Button>
+          <Button
+            onClick={() => runMaintenance(
               "reclassify",
               "/admin/reclassify-types",
               "إعادة تصنيف الأنواع (مانجا/مانهوا/مانها) حسب لغة العمل الأصلية من MangaDex",
@@ -421,6 +436,19 @@ export default function Admin() {
             renderStats={(d) => (
               <>أُصلح: {d.covers_updated ?? 0} / {d.scanned ?? "?"}
                 {d.still_missing != null ? ` • متبقي بدون غلاف: ${d.still_missing}` : ""}</>
+            )}
+          />
+        )}
+        {jobProgress.admin_olympus_import && (
+          <JobProgressCard
+            label="استيراد OlympusStaff"
+            data={jobProgress.admin_olympus_import}
+            testid="olympus-progress"
+            renderStats={(d) => (
+              <>فُحص: {d.scanned ?? 0} / {d.catalog_total ?? "?"}{" • "}
+                مطابق: {d.matched ?? 0}{" • "}جديد: {d.new_titles ?? 0}{" • "}
+                فصول مضافة: {d.chapters_added ?? 0}
+                {d.covers_fixed ? ` • أغلفة أُصلحت: ${d.covers_fixed}` : ""}</>
             )}
           />
         )}

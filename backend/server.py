@@ -17,7 +17,7 @@ import httpx
 from bson import ObjectId
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -1121,7 +1121,7 @@ async def proxy_image(url: str):
     """Proxy MangaDex/MangaSpark images through our backend to bypass
     referrer/rate-limit issues when loaded directly from the browser."""
     from fastapi.responses import Response
-    allowed = ("mangadex.network", "mangadex.org", "manga-spark.net", "manga-spark.com")
+    allowed = ("mangadex.network", "mangadex.org", "manga-spark.net", "manga-spark.com", "olympustaff.com")
     if not any(host in url for host in allowed):
         raise HTTPException(400, "URL غير مسموح")
     # manga-spark CDN requires browser UA + referer (Cloudflare protected)
@@ -1210,7 +1210,17 @@ async def admin_refresh_mangaspark(_: dict = Depends(require_admin)):
 
     async def _worker():
         try:
-            stats = await refresh_all_chapters(db)
+            from scrape_olympustaff import site_alive, refresh_latest as olympus_refresh
+            stats = {"titles_scanned": 0, "new_chapters": 0}
+            if await site_alive("https://manga-spark.net/"):
+                s1 = await refresh_all_chapters(db)
+                stats["titles_scanned"] += s1.get("titles_scanned", 0)
+                stats["new_chapters"] += s1.get("new_chapters", 0)
+            else:
+                logger.warning("[refresh] manga-spark.net unreachable — skipped")
+            s2 = await olympus_refresh(db, max_chapters=300)
+            stats["titles_scanned"] += s2.get("titles_scanned", 0)
+            stats["new_chapters"] += s2.get("new_chapters", 0)
             await db.system_logs.update_one(
                 {"job_id": job_id},
                 {"$set": {
@@ -1233,6 +1243,53 @@ async def admin_refresh_mangaspark(_: dict = Depends(require_admin)):
             "poll_url": "/api/admin/job-status?kind=mangaspark_refresh_manual"}
 
 # -------- Production maintenance endpoints (admin-only) --------
+@api.post("/admin/import-olympustaff")
+async def admin_import_olympustaff(max_new_titles: int = 10, max_chapters: int = 400, _: dict = Depends(require_admin)):
+    """Smart import from olympustaff.com: fills missing chapters for matched titles
+    and imports up to `max_new_titles` new titles. Re-runnable — each run continues
+    where the previous stopped. Poll /admin/job-status?kind=admin_olympus_import."""
+    from scrape_olympustaff import smart_import
+
+    job_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    await db.system_logs.insert_one({
+        "kind": "admin_olympus_import",
+        "job_id": job_id,
+        "status": "running",
+        "at": now,
+        "started_at": now,
+        "catalog_total": 0,
+        "scanned": 0,
+        "matched": 0,
+        "new_titles": 0,
+        "chapters_added": 0,
+    })
+
+    async def _progress(stats: dict):
+        await db.system_logs.update_one({"job_id": job_id}, {"$set": stats})
+
+    async def _worker():
+        try:
+            stats = await smart_import(db, progress_cb=_progress,
+                                       max_new_titles=max_new_titles, max_chapters=max_chapters)
+            await db.system_logs.update_one(
+                {"job_id": job_id},
+                {"$set": {"status": "done", "finished_at": datetime.now(timezone.utc).isoformat(), **stats}},
+            )
+            logger.info(f"[olympus-import {job_id}] done {stats}")
+        except Exception as e:
+            logger.exception(f"[olympus-import {job_id}] failed")
+            await db.system_logs.update_one(
+                {"job_id": job_id},
+                {"$set": {"status": "failed", "error": str(e)[:500],
+                          "finished_at": datetime.now(timezone.utc).isoformat()}},
+            )
+
+    asyncio.create_task(_worker())
+    return {"status": "processing", "job_id": job_id,
+            "poll_url": "/api/admin/job-status?kind=admin_olympus_import"}
+
+
 @api.post("/admin/dedupe-titles")
 async def admin_dedupe_titles(_: dict = Depends(require_admin)):
     """Merge duplicate titles (same source_slug). Runs in background — poll
@@ -1392,18 +1449,27 @@ async def admin_dedupe_titles(_: dict = Depends(require_admin)):
 
 @api.post("/admin/fix-missing-covers")
 async def admin_fix_missing_covers(_: dict = Depends(require_admin)):
-    """For titles with empty cover_url but a known mangadex_id, query MangaDex
-    Cover API in batches. Runs in background — poll /admin/job-status?kind=admin_fix_covers."""
+    """Fix titles with empty covers OR dead manga-spark.net covers.
+    Uses MangaDex Cover API when mangadex_id is known, otherwise searches
+    MangaDex by title. Runs in background — poll /admin/job-status?kind=admin_fix_covers."""
     from pymongo import UpdateOne
 
     job_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
+    dead_cover = {"$or": [
+        {"cover_url": ""}, {"cover_url": None}, {"cover_url": {"$exists": False}},
+        {"cover_url": {"$regex": r"manga-spark\.net"}},
+    ]}
     missing = await db.titles.find(
-        {
-            "mangadex_id": {"$exists": True, "$nin": [None, ""]},
-            "$or": [{"cover_url": ""}, {"cover_url": None}, {"cover_url": {"$exists": False}}],
-        },
+        {"mangadex_id": {"$exists": True, "$nin": [None, ""]}, **dead_cover},
         {"_id": 0, "id": 1, "mangadex_id": 1},
+    ).to_list(length=None)
+    no_mdid = await db.titles.find(
+        {"$and": [
+            {"$or": [{"mangadex_id": {"$exists": False}}, {"mangadex_id": {"$in": [None, ""]}}]},
+            dead_cover,
+        ]},
+        {"_id": 0, "id": 1, "title": 1, "title_ar": 1},
     ).to_list(length=None)
 
     await db.system_logs.insert_one({
@@ -1412,7 +1478,7 @@ async def admin_fix_missing_covers(_: dict = Depends(require_admin)):
         "status": "running",
         "at": now,
         "started_at": now,
-        "scanned": len(missing),
+        "scanned": len(missing) + len(no_mdid),
         "covers_updated": 0,
     })
 
@@ -1450,14 +1516,62 @@ async def admin_fix_missing_covers(_: dict = Depends(require_admin)):
                         {"$set": {"covers_updated": updated, "progress": start + len(batch)}},
                     )
                     await asyncio.sleep(0.3)
+
+                # Phase 2: titles without mangadex_id — search MangaDex by name
+                searched_found = 0
+                for i, t in enumerate(no_mdid):
+                    name = t.get("title") or t.get("title_ar") or ""
+                    if not name:
+                        continue
+                    try:
+                        r = await c.get(
+                            "https://api.mangadex.org/manga",
+                            params=[
+                                ("title", name), ("limit", 3), ("includes[]", "cover_art"),
+                                ("contentRating[]", "safe"), ("contentRating[]", "suggestive"), ("contentRating[]", "erotica"),
+                                ("order[relevance]", "desc"),
+                            ],
+                        )
+                        if r.status_code != 200:
+                            await asyncio.sleep(1.0)
+                            continue
+                        for item in r.json().get("data", []):
+                            fn = next(
+                                (rel.get("attributes", {}).get("fileName")
+                                 for rel in item.get("relationships", []) if rel.get("type") == "cover_art"),
+                                None,
+                            )
+                            if fn:
+                                await db.titles.update_one(
+                                    {"id": t["id"]},
+                                    {"$set": {
+                                        "cover_url": f"https://uploads.mangadex.org/covers/{item['id']}/{fn}.512.jpg",
+                                        "mangadex_id": item["id"],
+                                    }},
+                                )
+                                updated += 1
+                                searched_found += 1
+                                break
+                    except Exception:
+                        pass
+                    if i % 10 == 0:
+                        await db.system_logs.update_one(
+                            {"job_id": job_id},
+                            {"$set": {"covers_updated": updated, "progress": len(missing) + i}},
+                        )
+                    await asyncio.sleep(0.35)
             still_missing = await db.titles.count_documents(
-                {"$or": [{"cover_url": ""}, {"cover_url": None}, {"cover_url": {"$exists": False}}]}
+                {"$or": [
+                    {"cover_url": ""}, {"cover_url": None}, {"cover_url": {"$exists": False}},
+                    {"cover_url": {"$regex": r"manga-spark\.net"}},
+                ]}
             )
             await db.system_logs.update_one(
                 {"job_id": job_id},
                 {"$set": {
                     "status": "done",
                     "covers_updated": updated,
+                    "search_matched": searched_found,
                     "still_missing": still_missing,
                     "finished_at": datetime.now(timezone.utc).isoformat(),
                 }},
@@ -1591,7 +1705,7 @@ async def admin_reclassify_types(_: dict = Depends(require_admin)):
 async def admin_job_status(kind: str, _: dict = Depends(require_admin)):
     """Generic status poll for admin background jobs.
     kind: admin_dedupe | admin_fix_covers | admin_import_bundle"""
-    if kind not in {"admin_dedupe", "admin_fix_covers", "admin_import_bundle", "mangaspark_refresh_manual", "admin_reclassify_types"}:
+    if kind not in {"admin_dedupe", "admin_fix_covers", "admin_import_bundle", "mangaspark_refresh_manual", "admin_reclassify_types", "admin_olympus_import"}:
         raise HTTPException(400, "Invalid kind")
     log = await db.system_logs.find_one(
         {"kind": kind}, {"_id": 0}, sort=[("started_at", -1)]
@@ -1716,7 +1830,7 @@ async def admin_import_bundle_status(_: dict = Depends(require_admin)):
 @api.get("/admin/refresh-log")
 async def admin_refresh_log(_: dict = Depends(require_admin)):
     """Last 20 refresh runs (auto + manual)."""
-    logs = await db.system_logs.find({"kind": {"$in": ["mangaspark_refresh", "mangaspark_refresh_manual"]}}).sort("at", -1).limit(20).to_list(None)
+    logs = await db.system_logs.find({"kind": {"$in": ["mangaspark_refresh", "mangaspark_refresh_manual", "olympus_refresh"]}}).sort("at", -1).limit(20).to_list(None)
     for log in logs:
         log.pop("_id", None)
     return logs
@@ -1867,22 +1981,36 @@ async def on_start():
             })
         logger.info("Seeded anime trailers")
 
-    # Background scheduler: refresh manga-spark chapters every 6 hours
+    # Background scheduler: refresh Arabic chapter sources every 6 hours
     async def _mangaspark_refresh_loop():
-        from scrape_mangaspark import import_series, refresh_all_chapters
+        from scrape_mangaspark import refresh_all_chapters
+        from scrape_olympustaff import site_alive, refresh_latest as olympus_refresh
         # initial delay so app finishes startup quickly
         await asyncio.sleep(60)
         while True:
             try:
-                stats = await refresh_all_chapters(db)
-                logger.info(f"[mangaspark refresh] scanned={stats['titles_scanned']} new_chapters={stats['new_chapters']}")
-                await db.system_logs.insert_one({
-                    "kind": "mangaspark_refresh",
-                    "at": datetime.now(timezone.utc).isoformat(),
-                    **stats,
-                })
+                if await site_alive("https://manga-spark.net/"):
+                    stats = await refresh_all_chapters(db)
+                    logger.info(f"[mangaspark refresh] scanned={stats['titles_scanned']} new_chapters={stats['new_chapters']}")
+                    await db.system_logs.insert_one({
+                        "kind": "mangaspark_refresh",
+                        "at": datetime.now(timezone.utc).isoformat(),
+                        **stats,
+                    })
+                else:
+                    logger.warning("[mangaspark refresh] site unreachable — skipped")
             except Exception as e:
                 logger.exception(f"mangaspark refresh failed: {e}")
+            try:
+                ostats = await olympus_refresh(db, max_chapters=300)
+                logger.info(f"[olympus refresh] scanned={ostats['titles_scanned']} new_chapters={ostats['new_chapters']}")
+                await db.system_logs.insert_one({
+                    "kind": "olympus_refresh",
+                    "at": datetime.now(timezone.utc).isoformat(),
+                    **ostats,
+                })
+            except Exception as e:
+                logger.exception(f"olympus refresh failed: {e}")
             # 6 hours
             await asyncio.sleep(6 * 60 * 60)
 
