@@ -2036,5 +2036,3 @@ async def on_stop():
 @api.get("/")
 async def root():
     return {"ok": True, "name": "Otaku Hub"}
-import subprocess
-subprocess.Popen(["python", "import_classics.py"])
