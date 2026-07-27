@@ -1213,7 +1213,7 @@ async def admin_refresh_mangaspark(_: dict = Depends(require_admin)):
             from scrape_olympustaff import site_alive, refresh_latest as olympus_refresh
             stats = {"titles_scanned": 0, "new_chapters": 0}
             if await site_alive("https://manga-spark.net/"):
-                s1 = await refresh_all_chapters(db)
+                s1 = await refresh_all_chapters(db_arg=db)
                 stats["titles_scanned"] += s1.get("titles_scanned", 0)
                 stats["new_chapters"] += s1.get("new_chapters", 0)
             else:
