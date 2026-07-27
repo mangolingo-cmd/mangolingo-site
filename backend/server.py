@@ -1983,14 +1983,14 @@ async def on_start():
 
     # Background scheduler: refresh Arabic chapter sources every 6 hours
     async def _mangaspark_refresh_loop():
-        from scrape_mangaspark import refresh_all_chapters
+        import scrape_mangaspark
         from scrape_olympustaff import site_alive, refresh_latest as olympus_refresh
         # initial delay so app finishes startup quickly
         await asyncio.sleep(60)
         while True:
             try:
                 if await site_alive("https://manga-spark.net/"):
-                    stats = await refresh_all_chapters(db)
+                    stats = await scrape_mangaspark.refresh_all_chapters(db_arg=db)
                     logger.info(f"[mangaspark refresh] scanned={stats['titles_scanned']} new_chapters={stats['new_chapters']}")
                     await db.system_logs.insert_one({
                         "kind": "mangaspark_refresh",
