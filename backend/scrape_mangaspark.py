@@ -20,8 +20,8 @@ from curl_cffi import requests as curl_requests  # sync + AsyncSession
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 
-load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
-db = AsyncIOMotorClient(os.environ["MONGO_URL"])[os.environ["DB_NAME"]]
+#load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+db = AsyncIOMotorClient("mongodb+srv://manga:Manga123@cluster0.vsc94.mongodb.net/?retryWrites=true&w=majority")["test"]
 
 # ---------------------------------------------------------------------------
 # Popular slug list. Add new slugs at the bottom; existing ones dedup by slug.
