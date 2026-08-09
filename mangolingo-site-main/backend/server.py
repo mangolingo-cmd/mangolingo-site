@@ -1834,14 +1834,19 @@ async def admin_refresh_log(_: dict = Depends(require_admin)):
     for log in logs:
         log.pop("_id", None)
     return logs
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origin_regex=r"https://(mangolingo\.online|www\.mangolingo\.online|.*\.netlify\.app)",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+@app.middleware("http")
+async def add_cors_headers(request, call_next):
+    response = await call_next(request)
+    origin = request.headers.get("origin")
+    if origin and (
+        origin.endswith(".netlify.app")
+        or origin in ["https://mangolingo.online", "https://www.mangolingo.online"]
+    ):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
 
 app.include_router(api)
 
