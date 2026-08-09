@@ -1,0 +1,94 @@
+{
+  "theme": {
+    "archetype": "5 (Jewel & Luxury / Cinematic Moody) - Adapted for Anime/Otaku aesthetic",
+    "mode": "dark",
+    "rtl_support": true,
+    "description": "An immersive, cinematic dark theme that lets vibrant anime/manga cover art pop. Avoids typical generic purple/teal SaaS defaults in favor of a deep ink/void base with intense crimson and gold accents.",
+    "colors": {
+      "background": "#050505",
+      "surface": "#0F111A",
+      "surface_elevated": "#1A1D2B",
+      "primary": "#E63946",
+      "primary_hover": "#F0717B",
+      "secondary": "#FFB703",
+      "text_primary": "#F8F9FA",
+      "text_secondary": "#A0A5B5",
+      "border": "#232738",
+      "error": "#EF233C",
+      "success": "#06D6A0"
+    },
+    "typography": {
+      "strategy": "Arabic-First with expressive pairings",
+      "headings": {
+        "font_family": "'Kufam', sans-serif",
+        "weight": "800",
+        "usage": "Used for page titles, anime titles, and major section headers. It provides a bold, dynamic feel similar to Shonen/Seinen manga titles.",
+        "letter_spacing": "tracking-normal"
+      },
+      "body": {
+        "font_family": "'Cairo', sans-serif",
+        "weight": "400, 600",
+        "usage": "Highly legible for synopsis, chat messages, and reviews.",
+        "letter_spacing": "tracking-normal"
+      },
+      "rules": [
+        "DO NOT use tracking-tight or tracking-tighter on Arabic text as it breaks cursive connections.",
+        "Import fonts via Google Fonts: <link href='https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&family=Kufam:wght@400;700;800&display=swap' rel='stylesheet'>",
+        "No generic Inter or Roboto fonts."
+      ]
+    },
+    "spacing_and_layout": {
+      "rtl_protocol": "CRITICAL: The entire application MUST use dir='rtl' on the <html> or root element. Use logical properties in Tailwind: `ps/pe` (padding-start/end) instead of `pl/pr`, and `ms/me` instead of `ml/mr`.",
+      "grid_patterns": {
+        "catalog": "Fluid masonry or dense grid (grid-cols-2 md:grid-cols-4 lg:grid-cols-6) for anime/manga covers. Gap-4 to Gap-6.",
+        "profile": "Bento Grid style. Asymmetric blocks for stats (Watched, Reading, Dropped) vs Recent Friends vs Bio.",
+        "chat": "Full height layout (h-screen) with fixed sidebar/bottom input, scrollable message area."
+      },
+      "containers": "No borders on image-heavy cards. Use 1px border-border/40 on text-heavy or input containers."
+    },
+    "components": {
+      "catalog_card": {
+        "style": "Aspect ratio [2/3] for covers. Fully flush image. No padding around the image. Card radius rounded-lg.",
+        "overlay": "Gradient overlay at the bottom `bg-gradient-to-t from-black/80 to-transparent` to ensure white Arabic title text is highly readable.",
+        "interaction": "Hover state: -translate-y-2 scale-105 duration-300 with shadow-[0_8px_30px_rgba(230,57,70,0.2)] (Primary color glow)."
+      },
+      "chat_bubble": {
+        "style": "Glassmorphism for modern feel over dark backgrounds.",
+        "sender": "bg-white/10 backdrop-blur-md text-text_primary rounded-2xl rounded-tr-sm (RTL adjustment)",
+        "current_user": "bg-primary/20 backdrop-blur-md border border-primary/30 text-text_primary rounded-2xl rounded-tl-sm (RTL adjustment)"
+      },
+      "buttons": {
+        "style": "Sharp edges or minimal radius (rounded-md). High contrast.",
+        "primary": "bg-primary text-white hover:bg-primary_hover font-bold",
+        "secondary": "bg-surface_elevated text-text_primary border border-border hover:bg-white/5"
+      },
+      "navigation": {
+        "mobile": "Sticky bottom navigation bar with crystal glassmorphism (`backdrop-blur-xl bg-[#0F111A]/80 border-t border-border`).",
+        "desktop": "Top or side navigation with heavy blur. Logo should stand out."
+      }
+    },
+    "testing": {
+      "requirements": "ALL interactive elements (buttons, links, inputs, cards) MUST have a `data-testid` attribute using kebab-case. e.g., `data-testid='login-submit-button'`, `data-testid='chat-input-field'`, `data-testid='catalog-item-123'`."
+    },
+    "media_urls": {
+      "hero_background": {
+        "url": "https://images.unsplash.com/photo-1752338384552-1cda3350baba?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Nzh8MHwxfHNlYXJjaHw0fHx0b2t5byUyMG5pZ2h0JTIwYWxsZXl8ZW58MHx8fHwxNzc4NTA5MDMwfDA&ixlib=rb-4.1.0&q=85",
+        "description": "Tokyo night alley. Use as the main cinematic background for the lobby/login/hero area with a dark overlay."
+      },
+      "avatars": [
+        "https://images.unsplash.com/photo-1764078314427-41f0a05613d7?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHw0fHxzdHlsaXNoJTIwcHJvZmlsZSUyMHBvcnRyYWl0fGVufDB8fHx8MTc3ODUwOTAzMHww&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1762843353113-dbb7a55564b2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHwxfHxzdHlsaXNoJTIwcHJvZmlsZSUyMHBvcnRyYWl0fGVufDB8fHx8MTc3ODUwOTAzMHww&ixlib=rb-4.1.0&q=85"
+      ],
+      "cover_placeholders": [
+        "https://images.unsplash.com/photo-1748445907524-2721462cc31a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA0MTJ8MHwxfHNlYXJjaHw0fHxjaW5lbWF0aWMlMjBhbmltZSUyMGNvdmVyfGVufDB8fHx8MTc3ODUwOTAzNnww&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1755756383664-af3cf523242b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA0MTJ8MHwxfHNlYXJjaHwxfHxjaW5lbWF0aWMlMjBhbmltZSUyMGNvdmVyfGVufDB8fHx8MTc3ODUwOTAzNnww&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1757694010137-08c1ac1f697e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODl8MHwxfHNlYXJjaHwxfHxkYXJrJTIwbW9vZHklMjBmYW50YXN5JTIwbGFuZHNjYXBlfGVufDB8fHx8MTc3ODUwOTAzNnww&ixlib=rb-4.1.0&q=85"
+      ]
+    },
+    "micro_interactions": {
+      "hover": "Cards lift and cast a glowing drop-shadow. Navigation links get a 2px bottom underline slide animation.",
+      "chat": "New messages slide in from the bottom with a slight fade (Framer Motion: initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}).",
+      "tabs": "Use an animated background pill for the active tab state."
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "summary": "Iter4 backend regression testing after scrape_mangadex.py + import_specific.py refactor. Verified: (a) backend supervisor RUNNING with clean imports (no ImportError for better_profanity/emergentintegrations), (b) scrape_mangadex.import_series signature now accepts manga_id + search_title kwargs, (c) import_specific.py imports cleanly, (d) all 6 admin endpoints from the review (dedupe-titles, fix-missing-covers, import-mangaspark-bundle, 3x job-status?kind=…) return 200/202, (e) all previously-working endpoints still work (titles sort_by rating/views/newest, GET title increments views, episodes numeric ordering, public GET /api/users/{uid}, watchlist check auth), (f) chat message endpoints (POST/PATCH/DELETE/react) work with correct 403 enforcement, (g) Continue Reading endpoints (POST /reading/progress, GET /reading/continue, GET /reading/progress/{tid}), (h) PWA assets (/manifest.json, /service-worker.js, /icons/icon-192.png, /icons/icon-512.png) all 200, (i) public browsing (unauth GET /api/episodes/{eid}/pages and /api/titles/{tid}/episodes/{eid}) returns 200 without Authorization. Total 83/84 passing (98.8%). Only failure is pre-existing GET /api/ 404 from iter1/iter2/iter3 — NOT a regression.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/", "issue": "Still returns 404 (pre-existing from iter1-3; @api.get('/') registered after app.include_router(api))."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter4_admin_regression.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_iteration3_features.py",
+    "/app/backend/tests/test_optional_auth_and_pwa.py",
+    "/app/test_reports/pytest/iter4_all.xml",
+    "/app/test_reports/pytest/iter4_admin.xml"
+  ],
+  "action_items": [
+    "(low, pre-existing) Move @api.get('/') above app.include_router(api) — cosmetic 404 on /api/ root.",
+    "(info) End-to-end run of scrape_mangadex.import_series with manga_id/search_title kwargs was intentionally NOT executed (per review request, would hit MangaDex rate limits + take 30 min). Function signature verified via inspect only."
+  ],
+  "critical_code_review_comments": [
+    "scrape_mangadex.import_series signature verified to now expose manga_id + search_title kwargs — matches the fix described in the review.",
+    "import_specific.py imports cleanly (--source mangadex slug=UUID CLI form ready).",
+    "server.py imports cleanly; no ImportError for better_profanity or emergentintegrations — the requirements.txt cleanup is confirmed.",
+    "server.py still emits DeprecationWarnings for @app.on_event('startup'/'shutdown') — should migrate to FastAPI lifespan handlers (informational, not blocking)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter4_admin_regression.py (new — 12 tests covering script imports + admin endpoints + auth guards)"
+  ],
+  "success_rate": {"backend": "98.8% (83/84, only pre-existing test_root fails)", "frontend": "N/A (not requested)"},
+  "test_credentials": "admin@otaku.com / Admin@12345 (works). Note: /app/memory/test_credentials.md says Tester@12345 (works); review request said Test@12345 (was a typo — Tester@12345 is correct).",
+  "seed_data_creation": "Ephemeral users tester_*@otaku.com and tester2_*@otaku.com created via /api/auth/register per test session. TEST_NOTIFY_*, TEST_PATCH_* titles created and deleted in existing iter3 suite. No orphaned data.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Regression baseline as of iter4: 83/84 tests pass. Only pre-existing failure = test_root (GET /api/ returns 404 because @api.get('/') is registered after app.include_router). Do NOT try to actually execute scrape_mangadex.import_series end-to-end — it hits MangaDex API and takes 30+ min. Signature check via inspect.signature is sufficient. Test files: /app/backend/tests/{backend_test.py, test_iteration3_features.py, test_optional_auth_and_pwa.py, test_iter4_admin_regression.py}.",
+  "rca_of_the_issue": "N/A — this was regression-only testing after an offline-script refactor (scrape_mangadex.py + import_specific.py). No live-API code paths were touched by the fix. All previously-working endpoints continue to work; the script-side signature change (manga_id + search_title kwargs) is confirmed via inspect and imports cleanly."
+}

@@ -1,0 +1,37 @@
+{
+  "summary": "Backend (27 pytest cases) and frontend smoke testing for Otaku Hub. 26/27 backend tests pass (96%). Auth, titles, reviews, watchlist, friends, lobby/title/DM messages, DM 403 enforcement, and notifications all work. Frontend loads with RTL, admin login redirects to home with 6 seeded title cards, hero + nav (home/lobby/messages/friends/admin) all functional, lobby chat send works, admin panel renders add-title form.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/", "issue": "Root endpoint returns 404 because @api.get('/') in server.py is defined AFTER app.include_router(api). Move route definition above include_router or it will never register. No impact on real features."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "TitleDetail page", "issue": "Page stayed on 'جار التحميل...' loading indicator after navigation; missing data-testid for add-watchlist, review-submit, discussion-tab, reviews-tab. Either page is slow / failing to fetch /api/titles/{id} or required testids were never added. Needs investigation.", "selector": "/title/{id}", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Move @api.get('/') above app.include_router(api) in /app/backend/server.py (lines 488 & 611).",
+    "Investigate TitleDetailPage: confirm it fetches /api/titles/{id} successfully and exits the loading state; add data-testid attributes: add-watchlist, review-submit, reviews-tab, discussion-tab so flows are testable.",
+    "Consider adding data-testid='chat-input' and 'chat-send' on ChatRoom (currently auto-detected via fallback selectors)."
+  ],
+  "critical_code_review_comments": [
+    "DM room id uses sorted UUIDs joined with '_' producing 'dm_<uuidA>_<uuidB>'. Splitting by '_' then comparing to user id works only because UUIDs themselves contain '-' not '_'; OK but fragile — prefer storing participants array.",
+    "CORS allow_origins=['*'] with allow_credentials=False is fine for Bearer-token auth; acceptable.",
+    "Passwords hashed with bcrypt (good). JWT 7-day expiry stored client-side in localStorage (acceptable per spec).",
+    "All MongoDB queries correctly project out _id. No ObjectId leakage.",
+    "/api/dm uses regex on room_id and string split — works but a participants index would scale better.",
+    "Per spec @app.on_event is deprecated in FastAPI; consider lifespan handler. Non-blocking."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "96%", "frontend": "~80% (core flows OK; title-detail interactions unverified)"},
+  "test_credentials": "Admin: admin@otaku.com / Admin@12345 (seeded). Tester accounts created dynamically per run with unique emails.",
+  "seed_data_creation": "Admin user and 6 sample titles are auto-seeded by backend startup. Tests create transient TEST_ users/titles and admin-deletes its test title at end.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend test file: /app/backend/tests/backend_test.py covers all 26 listed endpoints + role/permission checks. The single failing test (test_root) is a code-ordering bug (route registered after router include). Frontend title-detail page needs testid attributes and verification that the title detail fetch + tabs (reviews/discussion) work end-to-end before claiming full UI pass."
+}
