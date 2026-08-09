@@ -1837,11 +1837,7 @@ async def admin_refresh_log(_: dict = Depends(require_admin)):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://mangolingo.online",
-        "https://www.mangolingo.online",
-        "https://stunning-dusk-f8101e.netlify.app"
-    ],
+    allow_origin_regex=r"https://(mangolingo\.online|www\.mangolingo\.online|.*\.netlify\.app)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
