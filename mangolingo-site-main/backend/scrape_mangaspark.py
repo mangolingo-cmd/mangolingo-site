@@ -1,4 +1,4 @@
-"""Scrape popular manhwa/manga from manga-spark.net into MongoDB.
+"""Scrape popular manhwa/manga from sparkmanga.net into MongoDB.
 
 Uses curl_cffi.AsyncSession with browser TLS/JA3 fingerprinting to bypass
 Cloudflare protection. Provides:
@@ -102,7 +102,7 @@ HEADERS = {
     ),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "ar,en-US;q=0.9,en;q=0.8",
-    "Referer": "https://manga-spark.net/",
+    "Referer": "https://sparkmanga.net/",
     "Connection": "keep-alive",
 }
 
@@ -170,13 +170,13 @@ async def fetch_chapters(client, slug: str, manga_id: str) -> list[dict]:
     """POST to /wp-admin/admin-ajax.php get_chapters endpoint, then parse links."""
     try:
         r = await client.post(
-            "https://manga-spark.net/wp-admin/admin-ajax.php",
+            "https://sparkmanga.net/wp-admin/admin-ajax.php",
             data={"action": "manga_get_chapters", "manga": manga_id},
             headers={
                 **HEADERS,
                 "Content-Type": "application/x-www-form-urlencoded",
                 "X-Requested-With": "XMLHttpRequest",
-                "Referer": f"https://manga-spark.net/manga/{slug}/",
+                "Referer": f"https://sparkmanga.net/manga/{slug}/",
             },
         )
         if r.status_code != 200:
@@ -234,7 +234,7 @@ async def import_series(client, slug: str, max_chapters: int = 1000) -> dict:
         return {"skipped": True, "chapters": eps}
 
     try:
-        r = await _request_with_retry(client, f"https://manga-spark.net/manga/{slug}/")
+        r = await _request_with_retry(client, f"https://sparkmanga.net/manga/{slug}/")
         if r.status_code != 200:
             print(f"    ! HTTP {r.status_code}")
             return {"error": f"http {r.status_code}"}
@@ -244,7 +244,7 @@ async def import_series(client, slug: str, max_chapters: int = 1000) -> dict:
 
     info = parse_series_html(r.text, slug)
     if not info:
-        print("    ! parse failed (slug not on manga-spark.net)")
+        print("    ! parse failed (slug not on sparkmanga.net)")
         return {"error": "parse"}
 
     chapters = await fetch_chapters(client, slug, info["manga_id"])
@@ -266,7 +266,7 @@ async def import_series(client, slug: str, max_chapters: int = 1000) -> dict:
         "status": "ongoing",
         "source": SOURCE,
         "source_slug": slug,
-        "source_url": f"https://manga-spark.net/manga/{slug}/",
+        "source_url": f"https://sparkmanga.net/manga/{slug}/",
         "has_chapters": True,
         "has_ar": True,
         "langs_fetched": ["ar"],
@@ -328,7 +328,7 @@ async def refresh_all_chapters(db_arg=None) -> dict:
             titles_scanned += 1
             slug = t.get("source_slug")
             try:
-                r = await _request_with_retry(client, f"https://manga-spark.net/manga/{slug}/")
+                r = await _request_with_retry(client, f"https://sparkmanga.net/manga/{slug}/")
                 if r.status_code != 200:
                     continue
                 info = parse_series_html(r.text, slug)
