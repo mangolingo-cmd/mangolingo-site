@@ -1194,7 +1194,7 @@ async def get_upload(file_id: str):
 async def admin_refresh_mangaspark(_: dict = Depends(require_admin)):
     """Manually trigger an immediate manga-spark chapter refresh.
     Runs in background — poll /api/admin/job-status?kind=mangaspark_refresh_manual."""
-    from .scrape_mangaspark import refresh_all_chapters
+    from scrape_mangaspark import refresh_all_chapters
 
     job_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
