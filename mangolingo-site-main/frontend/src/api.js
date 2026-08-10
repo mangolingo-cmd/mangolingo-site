@@ -1,6 +1,6 @@
 import axios from "axios";
 
-export const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+export const API = `/api`;
 
 // Wrap MangaDex / MangaSpark image URLs through our backend proxy so the browser
 // doesn't get blocked by referer/rate-limit on direct CDN requests.
