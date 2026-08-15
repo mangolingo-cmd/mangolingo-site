@@ -21,7 +21,9 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 
 #load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
-db = AsyncIOMotorClient("mongodb+srv://manga:Manga123@cluster0.vsc94.mongodb.net/?retryWrites=true&w=majority")["test"]
+MONGO_URL = os.environ.get("MONGO_URL")
+DB_NAME = os.environ.get("DB_NAME", "otaku_hub")
+db = AsyncIOMotorClient(MONGO_URL)[DB_NAME]
 
 # ---------------------------------------------------------------------------
 # Popular slug list. Add new slugs at the bottom; existing ones dedup by slug.
