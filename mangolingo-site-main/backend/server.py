@@ -1757,8 +1757,8 @@ async def admin_reclassify_types(_: dict = Depends(require_admin)):
 async def admin_job_status(kind: str, _: dict = Depends(require_admin)):
     """Generic status poll for admin background jobs.
     kind: admin_dedupe | admin_fix_covers | admin_import_bundle"""
-   if kind not in {"admin_dedupe", "admin_fix_covers", "admin_import_bundle", "mangaspark_refresh_manual", "admin_reclassify_types", "admin_olympus_import", "admin_mangaspark_new_import"}:
-        raise HTTPException(400, "Invalid kind")
+       if kind not in {"admin_dedupe", "admin_fix_covers", "admin_import_bundle", "mangaspark_refresh_manual", "admin_reclassify_types", "admin_olympus_import", "admin_mangaspark_new_import"}:
+            raise HTTPException(400, "Invalid kind")
     log = await db.system_logs.find_one(
         {"kind": kind}, {"_id": 0}, sort=[("started_at", -1)]
     )
