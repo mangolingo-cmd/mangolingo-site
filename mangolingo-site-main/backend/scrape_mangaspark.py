@@ -408,6 +408,85 @@ async def refresh_all_chapters(db_arg=None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Discovery + bulk import of NEW titles not yet in our DB
+# ---------------------------------------------------------------------------
+async def discover_slugs(client, max_titles: int = 200, max_pages: int = 60, order: str = "trending") -> list[str]:
+    """Crawl sparkmanga.net listing pages and collect manga slugs."""
+    slugs: list[str] = []
+    seen: set[str] = set()
+    page = 1
+    while len(slugs) < max_titles and page <= max_pages:
+        url = (
+            f"https://sparkmanga.net/manga/?m_orderby={order}"
+            if page == 1
+            else f"https://sparkmanga.net/manga/page/{page}/?m_orderby={order}"
+        )
+        try:
+            r = await _request_with_retry(client, url)
+        except Exception as e:
+            print(f"  discover: page {page} failed: {e}")
+            break
+        if r.status_code != 200:
+            break
+        found = re.findall(
+            r'href="https://(?:sparkmanga\.net|manga-spark\.net)/manga/([a-z0-9][a-z0-9\-]+)/"',
+            r.text,
+        )
+        new_on_page = 0
+        for s in found:
+            if s == "page" or s in seen:
+                continue
+            seen.add(s)
+            slugs.append(s)
+            new_on_page += 1
+            if len(slugs) >= max_titles:
+                break
+        print(f"  discover page {page}: +{new_on_page} (total {len(slugs)})")
+        if new_on_page == 0:
+            break
+        page += 1
+        await asyncio.sleep(0.8)
+    return slugs
+
+
+async def bulk_import_new_titles(
+    max_titles: int = 100,
+    concurrency: int = 5,
+    max_chapters_per_title: int = 50,
+    order: str = "trending",
+) -> dict:
+    """Discover new slugs and import them with limited concurrency."""
+    sem = asyncio.Semaphore(concurrency)
+    stats = {"discovered": 0, "imported": 0, "skipped_existing": 0, "errors": 0, "chapters_total": 0}
+
+    async with _new_client() as client:
+        slugs = await discover_slugs(client, max_titles=max_titles * 3, order=order)
+        stats["discovered"] = len(slugs)
+
+        async def do_one(slug: str):
+            async with sem:
+                try:
+                    res = await import_series(client, slug, max_chapters=max_chapters_per_title)
+                    if res.get("skipped"):
+                        stats["skipped_existing"] += 1
+                    elif res.get("error"):
+                        stats["errors"] += 1
+                    else:
+                        stats["imported"] += 1
+                        stats["chapters_total"] += res.get("chapters", 0)
+                except Exception as e:
+                    stats["errors"] += 1
+                    print(f"  bulk import error {slug}: {e}")
+
+        tasks = []
+        for slug in slugs:
+            if stats["imported"] >= max_titles:
+                break
+            tasks.append(asyncio.create_task(do_one(slug)))
+        await asyncio.gather(*tasks)
+
+    return stats
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 async def main():
