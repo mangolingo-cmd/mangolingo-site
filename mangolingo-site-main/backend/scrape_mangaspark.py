@@ -186,7 +186,10 @@ async def fetch_chapters(client, slug: str, manga_id: str) -> list[dict]:
         print(f"      ! fetch chapters failed: {e}")
         return []
 
-    chap_urls = re.findall(rf'href="(https://manga-spark\.net/manga/{re.escape(slug)}/([0-9]+)/?)"', text)
+   chap_urls = re.findall(
+    rf'href="(https://(?:manga-spark\.net|sparkmanga\.net)/manga/{re.escape(slug)}/([0-9]+)/?)"',
+    text
+)
     seen: set[str] = set()
     chapters: list[dict] = []
     for url, num in chap_urls:
