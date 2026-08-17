@@ -1242,6 +1242,58 @@ async def admin_refresh_mangaspark(_: dict = Depends(require_admin)):
     return {"status": "processing", "job_id": job_id,
             "poll_url": "/api/admin/job-status?kind=mangaspark_refresh_manual"}
 
+@api.post("/admin/import-mangaspark-new")
+async def admin_import_mangaspark_new(
+    max_titles: int = 100,
+    max_chapters_per_title: int = 50,
+    concurrency: int = 5,
+    order: str = "trending",
+    _: dict = Depends(require_admin),
+):
+    """Discover and import NEW titles from sparkmanga.net not yet in our DB.
+    Runs in background — poll /api/admin/job-status?kind=admin_mangaspark_new_import."""
+    from scrape_mangaspark import bulk_import_new_titles
+
+    job_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    await db.system_logs.insert_one({
+        "kind": "admin_mangaspark_new_import",
+        "job_id": job_id,
+        "status": "running",
+        "at": now,
+        "started_at": now,
+        "discovered": 0,
+        "imported": 0,
+        "skipped_existing": 0,
+        "errors": 0,
+        "chapters_total": 0,
+    })
+
+    async def _worker():
+        try:
+            stats = await bulk_import_new_titles(
+                max_titles=max_titles,
+                concurrency=concurrency,
+                max_chapters_per_title=max_chapters_per_title,
+                order=order,
+            )
+            await db.system_logs.update_one(
+                {"job_id": job_id},
+                {"$set": {"status": "done", "finished_at": datetime.now(timezone.utc).isoformat(), **stats}},
+            )
+            logger.info(f"[mangaspark-new-import {job_id}] done {stats}")
+        except Exception as e:
+            logger.exception(f"[mangaspark-new-import {job_id}] failed")
+            await db.system_logs.update_one(
+                {"job_id": job_id},
+                {"$set": {"status": "failed", "error": str(e)[:500],
+                          "finished_at": datetime.now(timezone.utc).isoformat()}},
+            )
+
+    asyncio.create_task(_worker())
+    return {"status": "processing", "job_id": job_id,
+            "poll_url": "/api/admin/job-status?kind=admin_mangaspark_new_import"}
+
 # -------- Production maintenance endpoints (admin-only) --------
 @api.post("/admin/import-olympustaff")
 async def admin_import_olympustaff(max_new_titles: int = 10, max_chapters: int = 400, _: dict = Depends(require_admin)):
@@ -1705,7 +1757,7 @@ async def admin_reclassify_types(_: dict = Depends(require_admin)):
 async def admin_job_status(kind: str, _: dict = Depends(require_admin)):
     """Generic status poll for admin background jobs.
     kind: admin_dedupe | admin_fix_covers | admin_import_bundle"""
-    if kind not in {"admin_dedupe", "admin_fix_covers", "admin_import_bundle", "mangaspark_refresh_manual", "admin_reclassify_types", "admin_olympus_import"}:
+   if kind not in {"admin_dedupe", "admin_fix_covers", "admin_import_bundle", "mangaspark_refresh_manual", "admin_reclassify_types", "admin_olympus_import", "admin_mangaspark_new_import"}:
         raise HTTPException(400, "Invalid kind")
     log = await db.system_logs.find_one(
         {"kind": kind}, {"_id": 0}, sort=[("started_at", -1)]
